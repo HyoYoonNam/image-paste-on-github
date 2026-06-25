@@ -16,7 +16,7 @@
 		"upload",
 		"cdn"
 	],
-	"author": "rudevico",
+	"author": "HyoYoonNam",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^20.11.0",

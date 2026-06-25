@@ -4,7 +4,7 @@
 	"version": "1.0.0",
 	"minAppVersion": "1.4.0",
 	"description": "Upload pasted images to your GitHub repository and insert the raw CDN link automatically instead of saving them locally.",
-	"author": "rudevico",
-	"authorUrl": "https://github.com/rudevico",
+	"author": "HyoYoonNam",
+	"authorUrl": "https://github.com/HyoYoonNam",
 	"isDesktopOnly": false
 }
