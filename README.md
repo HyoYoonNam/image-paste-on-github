@@ -21,16 +21,19 @@ repo you control, and embeds the public raw URL — nothing is written to your v
 
 ## Setup
 
-1. Create a public repo to hold your images (e.g. `my-image-cdn`).
-2. Create a fine-grained PAT: GitHub → Settings → Developer settings →
-   Fine-grained tokens → restrict it to that one repo, grant **Contents: write**.
-3. In Obsidian: Settings → Image Paste on GitHub, and fill in:
-   - **GitHub token**
-   - **Owner** (your username/org)
-   - **Repository**
-   - **Branch** (default `main`)
-   - **Upload path** (folder prefix inside the repo, default `assets`)
-4. Click **Test connection** to confirm push access and public visibility.
+Open Settings → Image Paste on GitHub. The settings tab provides shortcut
+buttons for each step:
+
+1. **Create a token → Open GitHub**: generates a fine-grained PAT. Restrict it to
+   your image repository and grant **Contents: read and write**. Paste it into
+   **GitHub token**.
+2. Fill in **Owner** (your username/org).
+3. **Create repository → Create**: makes a new public repo (and fills in owner and
+   repository for you). If your token is scoped too narrowly to create repos, it
+   opens GitHub's new-repo page instead. Or set **Repository** to an existing repo.
+4. Optionally adjust **Branch** (default `main`) and **Upload path** (default
+   `assets`).
+5. Click **Test connection** to confirm push access and public visibility.
 
 ## Usage
 

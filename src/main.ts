@@ -238,6 +238,20 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
+			.setName("Create a token")
+			.setDesc(
+				"Opens GitHub to generate a fine-grained token. Grant Contents: read and write on your image repository."
+			)
+			.addButton((button) =>
+				button.setButtonText("Open GitHub").onClick(() => {
+					window.open(
+						"https://github.com/settings/personal-access-tokens/new",
+						"_blank"
+					);
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("Owner")
 			.setDesc("GitHub username or organization that owns the repo.")
 			.addText((text) =>
@@ -261,6 +275,17 @@ class ImagePasteSettingTab extends PluginSettingTab {
 						this.plugin.settings.repo = value.trim();
 						await this.plugin.saveSettings();
 					})
+			);
+
+		new Setting(containerEl)
+			.setName("Create repository")
+			.setDesc(
+				"Create a new public repo to store images. Falls back to GitHub if your token cannot create one."
+			)
+			.addButton((button) =>
+				button.setButtonText("Create").onClick(async () => {
+					await this.createRepository();
+				})
 			);
 
 		new Setting(containerEl)
@@ -359,6 +384,66 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Unknown error";
 			new Notice(`Connection failed: ${message}`);
+		}
+	}
+
+	private async createRepository() {
+		const { githubToken } = this.plugin.settings;
+		const repoName = this.plugin.settings.repo || "obsidian-image-cdn";
+		const newRepoUrl = `https://github.com/new?name=${encodeURIComponent(
+			repoName
+		)}`;
+
+		// Without a token we cannot use the API, so just open GitHub.
+		if (!githubToken) {
+			new Notice("No token set. Opening GitHub to create the repo.");
+			window.open(newRepoUrl, "_blank");
+			return;
+		}
+
+		try {
+			const response = await requestUrl({
+				url: "https://api.github.com/user/repos",
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${githubToken}`,
+					Accept: "application/vnd.github+json",
+					"X-GitHub-Api-Version": "2022-11-28",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					name: repoName,
+					private: false,
+					auto_init: true,
+					description:
+						"Image storage for the Image Paste on GitHub Obsidian plugin.",
+				}),
+				throw: false,
+			});
+
+			if (response.status === 201) {
+				this.plugin.settings.owner = response.json.owner.login;
+				this.plugin.settings.repo = response.json.name;
+				await this.plugin.saveSettings();
+				new Notice(`Created ${response.json.full_name}.`);
+				this.display();
+				return;
+			}
+
+			if (response.status === 422) {
+				new Notice(
+					`"${repoName}" may already exist. Fill in owner and repository manually.`
+				);
+				return;
+			}
+
+			// 403 and friends: the token cannot create repos. Fall back to GitHub.
+			const detail = response.json?.message ?? `HTTP ${response.status}`;
+			new Notice(`Token cannot create repo (${detail}). Opening GitHub.`);
+			window.open(newRepoUrl, "_blank");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Unknown error";
+			new Notice(`Could not create repo: ${message}`);
 		}
 	}
 }
