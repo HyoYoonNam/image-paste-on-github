@@ -1,0 +1,17 @@
+# build output
+main.js
+*.js.map
+
+# dependencies
+node_modules/
+
+# obsidian local test vault symlinks
+.hotreload
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+
+# omc state
+.omc/

@@ -1,0 +1,10 @@
+.image-paste-github-warning {
+	border: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--text-warning);
+	border-radius: 4px;
+	padding: 0.75em 1em;
+	margin-bottom: 1em;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: 1.4;
+}
