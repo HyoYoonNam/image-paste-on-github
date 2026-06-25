@@ -216,9 +216,15 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		});
 		warning.createEl("strong", { text: "Heads up: " });
 		warning.appendText(
-			"the target repository must be public so the raw links render without a token. " +
-				"Every pasted image becomes publicly accessible. Use a fine-grained personal " +
-				"access token scoped to this single repository with Contents: read and write."
+			"the target repository must be public, so every pasted image becomes publicly accessible."
+		);
+		warning.createEl("br");
+		warning.createEl("br");
+		warning.createEl("strong", { text: "Token safety: " });
+		warning.appendText(
+			"the token is stored unencrypted in this vault's data.json. Scope it to only this " +
+				"repository with Contents: read and write, give it an expiration date, and never " +
+				"sync, commit, or share data.json. A leaked token can push to your image repository."
 		);
 
 		new Setting(containerEl)
@@ -261,7 +267,7 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("GitHub token")
 			.setDesc(
-				"Fine-grained personal access token. Stored unencrypted in this vault's plugin data."
+				"Fine-grained, single-repository token with Contents: read and write. Stored unencrypted (see the note above)."
 			)
 			.addText((text) => {
 				text.inputEl.type = "password";

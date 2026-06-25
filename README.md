@@ -16,8 +16,10 @@ repo you control, and embeds the public raw URL — nothing is written to your v
   token for public repos, so **every image you paste becomes publicly accessible.**
   Do not paste sensitive screenshots.
 - Use a **fine-grained personal access token** scoped to a **single repository**
-  with **Contents: read and write**. Nothing else is needed.
-- The token is stored unencrypted in this vault's plugin data (`data.json`).
+  with **Contents: read and write**, and give it an **expiration date**. Nothing
+  else is needed, so a leaked token can only push to that one image repo.
+- The token is stored **unencrypted** in this vault's plugin data (`data.json`).
+  Do not sync, commit, or share `data.json`.
 
 ## Setup
 
@@ -56,6 +58,21 @@ npm run build  # type-check + production bundle
 
 Copy `main.js`, `manifest.json`, and `styles.css` into
 `<vault>/.obsidian/plugins/image-paste-on-github/` to test.
+
+## Security
+
+Obsidian has no secure credential storage, so the token is kept **unencrypted** in
+`data.json` — the same as other token-based plugins. The plugin only sends the token
+to GitHub in the `Authorization` header; it is never written to your notes, logged,
+or placed in URLs. The practical risk is `data.json` leaking through sync, backups,
+or sharing, so the main protection is keeping the token narrowly scoped:
+
+- Scope it to a **single public repository** with **Contents: read and write** only.
+- Set an **expiration date** and rotate it.
+- Never sync, commit, or share `data.json`.
+
+With this setup, a leaked token can only push images to that one repo — it cannot
+touch the rest of your GitHub account.
 
 ## License
 
