@@ -122,15 +122,49 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 			console.error("Image Paste on GitHub upload failed:", err);
 			const message =
 				err instanceof Error ? err.message : "Unknown error";
-			new Notice(`Image upload failed: ${message}`);
-			// Remove the placeholder; user can retry or paste locally.
-			this.replaceToken(editor, placeholder, "");
+
 			if (this.settings.fallbackToLocal) {
-				new Notice(
-					"Tip: disable the plugin or fix settings to save images locally instead."
-				);
+				try {
+					await this.saveLocally(editor, image, placeholder);
+					new Notice(
+						`Image upload failed (${message}); saved to the vault instead.`
+					);
+					return;
+				} catch (saveErr) {
+					console.error(
+						"Image Paste on GitHub local fallback failed:",
+						saveErr
+					);
+				}
 			}
+
+			// No fallback, or the fallback also failed: drop the placeholder.
+			this.replaceToken(editor, placeholder, "");
+			new Notice(`Image upload failed: ${message}`);
 		}
+	}
+
+	// Saves the image into the vault and replaces the placeholder with a normal
+	// embed, so a failed upload never loses the pasted image.
+	private async saveLocally(editor: Editor, image: File, placeholder: string) {
+		const ext = MIME_EXTENSIONS[image.type] ?? "png";
+		const filename = `pasted-${Date.now()}-${Math.random()
+			.toString(36)
+			.slice(2, 8)}.${ext}`;
+		const sourcePath = this.app.workspace.getActiveFile()?.path ?? "";
+		const targetPath =
+			await this.app.fileManager.getAvailablePathForAttachment(
+				filename,
+				sourcePath
+			);
+		const buffer = await image.arrayBuffer();
+		const file = await this.app.vault.createBinary(targetPath, buffer);
+		const link = this.app.fileManager.generateMarkdownLink(file, sourcePath);
+		this.replaceToken(
+			editor,
+			placeholder,
+			link.startsWith("!") ? link : `!${link}`
+		);
 	}
 
 	private replaceToken(editor: Editor, from: string, to: string) {
@@ -335,9 +369,9 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Notify on fallback")
+			.setName("Save locally on failure")
 			.setDesc(
-				"Show a tip when an upload fails so you can fix settings or save locally."
+				"If an upload fails, save the image into your vault instead of discarding it."
 			)
 			.addToggle((toggle) =>
 				toggle
