@@ -21,16 +21,16 @@ repo you control, and embeds the public raw URL — nothing is written to your v
 
 ## Setup
 
-Open Settings → Image Paste on GitHub. The settings tab provides shortcut
-buttons for each step:
+Open Settings → Image Paste on GitHub. The settings are ordered so you choose the
+repository first, then create a token scoped to it:
 
-1. **Create a token → Open GitHub**: generates a fine-grained PAT. Restrict it to
-   your image repository and grant **Contents: read and write**. Paste it into
-   **GitHub token**.
-2. Fill in **Owner** (your username/org).
-3. **Create repository → Create**: makes a new public repo (and fills in owner and
+1. Fill in **Owner** (your username/org) and **Repository**.
+2. **Create repository → Create**: makes a new public repo (and fills in owner and
    repository for you). If your token is scoped too narrowly to create repos, it
-   opens GitHub's new-repo page instead. Or set **Repository** to an existing repo.
+   opens GitHub's new-repo page instead. Skip this if the repo already exists.
+3. **Create a token → Open GitHub**: generates a fine-grained PAT. Restrict it to
+   that repository and grant **Contents: read and write**, then paste it into
+   **GitHub token**.
 4. Optionally adjust **Branch** (default `main`) and **Upload path** (default
    `assets`).
 5. Click **Test connection** to confirm push access and public visibility.

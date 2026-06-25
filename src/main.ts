@@ -222,36 +222,6 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		);
 
 		new Setting(containerEl)
-			.setName("GitHub token")
-			.setDesc(
-				"Fine-grained personal access token. Stored unencrypted in this vault's plugin data."
-			)
-			.addText((text) => {
-				text.inputEl.type = "password";
-				text
-					.setPlaceholder("github_pat_...")
-					.setValue(this.plugin.settings.githubToken)
-					.onChange(async (value) => {
-						this.plugin.settings.githubToken = value.trim();
-						await this.plugin.saveSettings();
-					});
-			});
-
-		new Setting(containerEl)
-			.setName("Create a token")
-			.setDesc(
-				"Opens GitHub to generate a fine-grained token. Grant Contents: read and write on your image repository."
-			)
-			.addButton((button) =>
-				button.setButtonText("Open GitHub").onClick(() => {
-					window.open(
-						"https://github.com/settings/personal-access-tokens/new",
-						"_blank"
-					);
-				})
-			);
-
-		new Setting(containerEl)
 			.setName("Owner")
 			.setDesc("GitHub username or organization that owns the repo.")
 			.addText((text) =>
@@ -285,6 +255,36 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button.setButtonText("Create").onClick(async () => {
 					await this.createRepository();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("GitHub token")
+			.setDesc(
+				"Fine-grained personal access token. Stored unencrypted in this vault's plugin data."
+			)
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text
+					.setPlaceholder("github_pat_...")
+					.setValue(this.plugin.settings.githubToken)
+					.onChange(async (value) => {
+						this.plugin.settings.githubToken = value.trim();
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Create a token")
+			.setDesc(
+				"Opens GitHub to generate a fine-grained token scoped to the repository above, with Contents: read and write."
+			)
+			.addButton((button) =>
+				button.setButtonText("Open GitHub").onClick(() => {
+					window.open(
+						"https://github.com/settings/personal-access-tokens/new",
+						"_blank"
+					);
 				})
 			);
 
