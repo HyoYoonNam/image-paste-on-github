@@ -10,6 +10,19 @@ import {
 	requestUrl,
 } from "obsidian";
 
+interface GithubErrorResponse {
+	message?: string;
+}
+
+interface GithubRepoResponse {
+	name?: string;
+	full_name?: string;
+	owner?: { login?: string };
+	private?: boolean;
+	permissions?: { push?: boolean };
+	message?: string;
+}
+
 interface ImagePasteSettings {
 	githubToken: string;
 	owner: string;
@@ -46,15 +59,19 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on("editor-paste", (evt, editor) => {
-				const files = evt.clipboardData?.files;
-				this.handleImages(evt, editor, files);
+				if (evt.defaultPrevented) return;
+				if (this.handleImages(editor, evt.clipboardData?.files)) {
+					evt.preventDefault();
+				}
 			})
 		);
 
 		this.registerEvent(
 			this.app.workspace.on("editor-drop", (evt, editor) => {
-				const files = evt.dataTransfer?.files;
-				this.handleImages(evt, editor, files);
+				if (evt.defaultPrevented) return;
+				if (this.handleImages(editor, evt.dataTransfer?.files)) {
+					evt.preventDefault();
+				}
 			})
 		);
 
@@ -63,32 +80,31 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 
 	onunload() {}
 
+	// Returns true when we take over the paste/drop so the caller can call
+	// evt.preventDefault() and suppress the default local-save behaviour.
 	private handleImages(
-		evt: ClipboardEvent | DragEvent,
 		editor: Editor,
 		fileList: FileList | null | undefined
-	) {
-		if (!fileList || fileList.length === 0) return;
+	): boolean {
+		if (!fileList || fileList.length === 0) return false;
 
 		const images = Array.from(fileList).filter((f) =>
 			f.type.startsWith("image/")
 		);
-		if (images.length === 0) return;
+		if (images.length === 0) return false;
 
 		// Missing config: let Obsidian's default handler save locally.
 		if (!this.isConfigured()) {
 			new Notice(
 				"Image Paste on GitHub: configure your token, owner, and repo in settings."
 			);
-			return;
+			return false;
 		}
-
-		// We are taking over: stop the default local-save behaviour.
-		evt.preventDefault();
 
 		for (const image of images) {
 			void this.uploadAndInsert(editor, image);
 		}
+		return true;
 	}
 
 	private async uploadAndInsert(editor: Editor, image: File) {
@@ -171,8 +187,8 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		});
 
 		if (response.status !== 201 && response.status !== 200) {
-			const detail =
-				response.json?.message ?? `HTTP ${response.status}`;
+			const error = response.json as GithubErrorResponse | null;
+			const detail = error?.message ?? `HTTP ${response.status}`;
 			throw new Error(detail);
 		}
 
@@ -187,11 +203,8 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
+		const data = (await this.loadData()) as Partial<ImagePasteSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 	}
 
 	async saveSettings() {
@@ -365,14 +378,15 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			});
 
 			if (response.status !== 200) {
-				const detail =
-					response.json?.message ?? `HTTP ${response.status}`;
+				const error = response.json as GithubErrorResponse | null;
+				const detail = error?.message ?? `HTTP ${response.status}`;
 				new Notice(`Connection failed: ${detail}`);
 				return;
 			}
 
-			const canPush = response.json?.permissions?.push === true;
-			const isPrivate = response.json?.private === true;
+			const repoInfo = response.json as GithubRepoResponse;
+			const canPush = repoInfo.permissions?.push === true;
+			const isPrivate = repoInfo.private === true;
 
 			if (!canPush) {
 				new Notice(
@@ -428,10 +442,11 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			});
 
 			if (response.status === 201) {
-				this.plugin.settings.owner = response.json.owner.login;
-				this.plugin.settings.repo = response.json.name;
+				const repo = response.json as GithubRepoResponse;
+				this.plugin.settings.owner = repo.owner?.login ?? "";
+				this.plugin.settings.repo = repo.name ?? repoName;
 				await this.plugin.saveSettings();
-				new Notice(`Created ${response.json.full_name}.`);
+				new Notice(`Created ${repo.full_name ?? repoName}.`);
 				this.display();
 				return;
 			}
@@ -444,7 +459,8 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			}
 
 			// 403 and friends: the token cannot create repos. Fall back to GitHub.
-			const detail = response.json?.message ?? `HTTP ${response.status}`;
+			const error = response.json as GithubErrorResponse | null;
+			const detail = error?.message ?? `HTTP ${response.status}`;
 			new Notice(`Token cannot create repo (${detail}). Opening GitHub.`);
 			window.open(newRepoUrl, "_blank");
 		} catch (err) {
