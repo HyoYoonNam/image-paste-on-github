@@ -35,6 +35,11 @@ repository first, then create a token scoped to it:
    `assets`).
 5. Click **Test connection** to confirm push access and public visibility.
 
+When creating the token, restrict **Repository access** to your image repository and
+set **Contents** to **Read and write** (Metadata stays Read-only):
+
+![Fine-grained token settings with repository access limited to the image repo and Contents set to read and write](docs/images/token-setup.png)
+
 ## Usage
 
 Paste or drag an image into any note. A `![uploading...]()` placeholder appears,
