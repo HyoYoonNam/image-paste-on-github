@@ -1,8 +1,8 @@
 {
 	"id": "image-paste-on-github",
 	"name": "Image Paste on GitHub",
-	"version": "1.0.2",
-	"minAppVersion": "1.4.0",
+	"version": "1.0.3",
+	"minAppVersion": "1.5.7",
 	"description": "Upload pasted images to your GitHub repository and insert the raw CDN link automatically instead of saving them locally.",
 	"author": "HyoYoonNam",
 	"authorUrl": "https://github.com/HyoYoonNam",
