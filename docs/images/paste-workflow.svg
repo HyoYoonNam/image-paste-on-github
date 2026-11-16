@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+<title id="title">Paste an image, upload it to GitHub, and embed it in your note</title>
+<desc id="desc">Workflow illustration, not a screen recording. On successful upload, the image file is stored in a public GitHub repository. The Obsidian note embeds its raw URL and no local attachment is created.</desc>
+<g font-family="Arial, Helvetica, sans-serif">
+<rect x="0" y="0" width="960" height="520" rx="20" fill="#f7f7fb" stroke="none"/>
+<text x="28" y="37" font-size="14" fill="#66667b" font-weight="700" letter-spacing="1.3">IMAGE PASTE ON GITHUB</text>
+<text x="932" y="37" font-size="12" fill="#66667b" font-weight="400" text-anchor="end" letter-spacing="1">WORKFLOW ILLUSTRATION</text>
+<rect x="28" y="58" width="276" height="50" rx="12" fill="#ffffff" stroke="none"/>
+<circle cx="53" cy="83" r="14" fill="#efedf5"/>
+<text x="53" y="89" font-size="16" fill="#66667b" font-weight="700" text-anchor="middle">1</text>
+<text x="77" y="90" font-size="19" fill="#66667b" font-weight="400" >Paste an image</text>
+<text x="323" y="90" font-size="26" fill="#b4adc6" font-weight="400" text-anchor="middle">›</text>
+<rect x="342" y="58" width="276" height="50" rx="12" fill="#ffffff" stroke="none"/>
+<circle cx="367" cy="83" r="14" fill="#efedf5"/>
+<text x="367" y="89" font-size="16" fill="#66667b" font-weight="700" text-anchor="middle">2</text>
+<text x="391" y="90" font-size="19" fill="#66667b" font-weight="400" >Upload to GitHub</text>
+<text x="637" y="90" font-size="26" fill="#b4adc6" font-weight="400" text-anchor="middle">›</text>
+<rect x="656" y="58" width="276" height="50" rx="12" fill="#eee9fb" stroke="none"/>
+<circle cx="681" cy="83" r="14" fill="#7154c7"/>
+<text x="681" y="89" font-size="16" fill="#ffffff" font-weight="700" text-anchor="middle">3</text>
+<text x="705" y="90" font-size="19" fill="#7154c7" font-weight="700" >See it in your note</text>
+<rect x="28" y="129" width="520" height="285" rx="14" fill="#ffffff" stroke="#dddce8"/>
+<rect x="588" y="129" width="344" height="285" rx="14" fill="#ffffff" stroke="#dddce8"/>
+<text x="48" y="159" font-size="12" fill="#7154c7" font-weight="700" letter-spacing="1">OBSIDIAN</text>
+<text x="528" y="159" font-size="13" fill="#66667b" font-weight="400" text-anchor="end">Your vault</text>
+<path d="M28 174h520M588 174h344" stroke="#e5e3ed"/>
+<text x="608" y="159" font-size="12" fill="#18765b" font-weight="700" letter-spacing="1">GITHUB</text>
+<text x="912" y="159" font-size="13" fill="#66667b" font-weight="400" text-anchor="end">Public repository</text>
+<rect x="42" y="189" width="132" height="211" rx="8" fill="#f8f7fb" stroke="none"/>
+<text x="55" y="212" font-size="11" fill="#66667b" font-weight="700" letter-spacing="0.8">FILES</text>
+<rect x="49" y="225" width="118" height="31" rx="6" fill="#eee9fb" stroke="none"/>
+<text x="60" y="246" font-size="15" fill="#7154c7" font-weight="400" >Notes.md</text>
+<text x="55" y="371" font-size="11" fill="#66667b" font-weight="400" >Local attachments</text>
+<text x="55" y="390" font-size="16" fill="#18765b" font-weight="700" >0 added</text>
+<text x="194" y="213" font-size="24" fill="#242436" font-weight="700" >Notes</text>
+<text x="194" y="239" font-size="16" fill="#66667b" font-weight="400" >A view worth keeping.</text>
+<text x="608" y="211" font-size="21" fill="#242436" font-weight="700" >your-image-repo</text>
+<rect x="608" y="226" width="304" height="35" rx="6" fill="#f8f7fb" stroke="none"/>
+<text x="623" y="250" font-size="17" fill="#66667b" font-weight="400" font-family="monospace">assets/</text>
+<svg x="194" y="251" width="300" height="118" viewBox="0 0 300 144">
+      <rect width="300" height="144" rx="8" fill="#e7e5f6"/>
+      <circle cx="239" cy="35" r="17" fill="#efc975"/>
+      <path d="M0 112 75 36 160 144H0Z" fill="#ab9ed9"/>
+      <path d="m61 144 113-108 126 108Z" fill="#7f70b4"/>
+      <path d="m145 64 29-28 32 28-19-5-13 10-12-10Z" fill="#f8f7fd"/>
+      <path d="M0 123q75-25 144 0t156-4v25H0Z" fill="#c5bde2"/>
+    </svg>
+<text x="194" y="390" font-size="14" fill="#18765b" font-weight="700" >Embedded from the raw URL</text>
+<rect x="608" y="272" width="304" height="46" rx="8" fill="#eff7f3" stroke="none"/>
+<text x="623" y="301" font-size="17" fill="#18765b" font-weight="400" font-family="monospace">pasted-…-….png</text>
+<text x="623" y="347" font-size="18" fill="#18765b" font-weight="700" >Image saved on GitHub</text>
+<text x="623" y="372" font-size="16" fill="#66667b" font-weight="400" >Your note contains the link.</text>
+<path d="M581 275h-27m8-7-8 7 8 7" fill="none" stroke="#18765b" stroke-width="2.5" stroke-linecap="round"/>
+<text x="28" y="451" font-size="21" fill="#242436" font-weight="700" >03  Image in the note, file on GitHub</text>
+<text x="28" y="478" font-size="17" fill="#66667b" font-weight="400" >On success, no local attachment is created.</text>
+<text x="932" y="505" font-size="11" fill="#66667b" font-weight="400" text-anchor="end">Example filenames shortened</text>
+</g></svg>
