@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+<rect width="640" height="360" rx="20" fill="#f6f4fc"/>
+<text x="32" y="48" font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700" fill="#3c2e64">A view worth keeping</text>
+<text x="32" y="77" font-family="Arial,Helvetica,sans-serif" font-size="16" fill="#74658e">Sample image for Image Paste on GitHub</text>
+<svg x="32" y="101" width="576" height="230" viewBox="0 0 300 144">
+      <rect width="300" height="144" rx="8" fill="#e7e5f6"/>
+      <circle cx="239" cy="35" r="17" fill="#efc975"/>
+      <path d="M0 112 75 36 160 144H0Z" fill="#ab9ed9"/>
+      <path d="m61 144 113-108 126 108Z" fill="#7f70b4"/>
+      <path d="m145 64 29-28 32 28-19-5-13 10-12-10Z" fill="#f8f7fd"/>
+      <path d="M0 123q75-25 144 0t156-4v25H0Z" fill="#c5bde2"/>
+    </svg>
+</svg>

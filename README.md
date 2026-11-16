@@ -2,9 +2,9 @@
 
 Upload pasted or dropped images to your public GitHub repository and embed their URLs in Obsidian.
 
-![Workflow illustration: paste an image, upload it to GitHub, and display it in the note without a local attachment after a successful upload](docs/images/paste-workflow.gif)
+![Actual Obsidian recording: paste an image, upload it to GitHub, and display the remote image in the note without a local attachment](docs/images/obsidian-paste-demo.gif)
 
-*Workflow illustration.* [View the static diagram](docs/images/paste-workflow.svg).
+*Recorded in Obsidian.* [View the final frame](docs/images/obsidian-paste-demo.png).
 
 > **Public uploads:** The repository must be public, and every uploaded image is publicly accessible. Do not upload sensitive screenshots.
 >
@@ -37,6 +37,10 @@ The screenshot below is a reference for repository selection and **Contents: rea
 <summary>Formats, failures, and cancellation</summary>
 
 Successful uploads insert a `raw.githubusercontent.com` image link without creating a local attachment. While uploading, a temporary placeholder marks the insertion point.
+
+![Workflow illustration: paste an image, upload it to GitHub, and display it in the note without a local attachment after a successful upload](docs/images/paste-workflow.gif)
+
+*Workflow illustration.* [View the static diagram](docs/images/paste-workflow.svg).
 
 Files with MIME types `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`, `image/bmp`, and `image/avif` are uploaded without conversion. These types are selected from the file's MIME string, without inspecting its bytes.
 
