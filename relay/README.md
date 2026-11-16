@@ -1,5 +1,7 @@
 # GitHub App authentication relay
 
+For the hosted free-plan deployment, use the [Cloudflare Workers and D1 relay](cloudflare/README.md). This page documents the alternative Node/Firestore server; the GCP configuration requires billing and does not guarantee zero charges. Both implementations expose the same plugin authentication API.
+
 This Node.js 22+ service exchanges GitHub App authorization codes and rotating refresh tokens for the Obsidian plugin. It uses Node's HTTP server and the official `@google-cloud/firestore` SDK, pinned to 9.4.1. Images go directly from the plugin to GitHub; the relay never receives them.
 
 The GitHub App client secret lives only in the server environment. The relay handles access and refresh tokens transiently while forwarding requests and responses, but never stores them in Firestore. Pending login state, including a short-lived GitHub authorization code after browser approval, is stored temporarily in Firestore in production or memory for local development. The verifier and client secret are never written to the session store. The service uses no GitHub App private key and creates no installation tokens or user accounts.

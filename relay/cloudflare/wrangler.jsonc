@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "image-paste-auth",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-13",
+  "workers_dev": true,
+  "preview_urls": false,
+  "send_metrics": false,
+  "logpush": false,
+  "tail_consumers": [],
+  "observability": {
+    "enabled": false,
+    "head_sampling_rate": 0,
+    "logs": {
+      "enabled": false,
+      "invocation_logs": false,
+      "head_sampling_rate": 0,
+      "destinations": []
+    },
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 0,
+      "destinations": []
+    },
+    "issues": {
+      "enabled": false
+    }
+  },
+  "vars": {
+    "AUTH_ENABLED": "false",
+    "APP_NAMESPACE": "image_paste_auth",
+    "PUBLIC_BASE_URL": "https://auth.invalid",
+    "GITHUB_CLIENT_ID": "",
+    "GITHUB_APP_SLUG": ""
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "image-paste-auth",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+      "remote": false
+    }
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  }
+}

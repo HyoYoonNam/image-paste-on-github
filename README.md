@@ -20,7 +20,7 @@ Install and enable Image Paste on GitHub from [Obsidian's community plugins](htt
 
 > **Relay setup required:** This source tree does not include a hosted authentication service. Until an operator registers the GitHub App and deploys the relay, browser login is unavailable by default. Configure a trusted relay in **Advanced settings → Authentication relay**, or use the PAT option below. [Deployment guide](relay/README.md)
 
-Deploying on Google Cloud: the [Cloud Run guide](relay/deploy/gcp/README.md) includes Terraform for Firestore, Secret Manager, container hosting, and request-log exclusions. Register the App and add its secret after infrastructure bootstrap, then verify the private service before enabling public access.
+The [Cloudflare deployment guide](relay/cloudflare/README.md) uses **Workers Free and D1 Free**, with authentication disabled until the GitHub App and secret are configured. Keep the account on Free: requests fail at its limits instead of switching to paid usage. The optional [Cloud Run guide](relay/deploy/gcp/README.md) requires billing and does not meet a no-charge requirement.
 
 Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**.
 
@@ -29,7 +29,7 @@ Existing PAT users keep their current authentication mode and token after upgrad
 
 The plugin uses GitHub App browser authorization with PKCE S256. The relay keeps the App client secret on the server, checks short-lived, single-use login transactions, and exchanges authorization codes and refresh tokens with GitHub. The browser-to-Obsidian link contains only random transaction and state values, never credentials or your vault name. **Images are uploaded directly to GitHub**, without passing through the relay.
 
-Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation. With Firestore enabled, it temporarily stores pending-login metadata and authorization codes; access tokens, refresh tokens, and PKCE verifiers are never persisted on the relay. Login transactions expire after ten minutes, although Firestore's physical TTL deletion can happen later. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
+Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation. D1 or Firestore temporarily stores pending-login metadata and authorization codes; access tokens, refresh tokens, and PKCE verifiers are never persisted on the relay. Logins expire after ten minutes, independently of delayed cleanup. D1's automatic Time Travel can retain prior database states for up to seven days on Free, so deleting a row does not immediately erase recovery copies. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
 
 Access tokens renew automatically when needed, with one refresh request shared by concurrent uploads. The new access and refresh tokens are saved together. Expired authorization, an uncertain refresh result, or lost credentials requires reconnecting; the plugin never silently switches to your saved PAT.
 
@@ -94,17 +94,19 @@ Pending uploads stay tied to the original note when you switch tabs or rename it
 <details>
 <summary>Development and license</summary>
 
-Plugin development requires Node.js 20 or later. The authentication relay requires Node.js 22 or later.
+Plugin development requires Node.js 20 or later. The Node relay requires Node.js 22 or later; the Cloudflare tooling requires Node.js 22.12 or later.
 
-The optional GitHub App authentication relay uses the official Firestore SDK to share pending logins across server instances and restarts. Memory storage remains available for local development; Cloud Run requires Firestore. See [relay setup and deployment](relay/README.md) and the [authentication design](docs/auth-design.md). Its client secret stays on the server, and images continue to upload directly to GitHub. A real GitHub App and HTTPS deployment must be configured separately.
+The Cloudflare relay uses Workers Web APIs and D1 atomic SQL batches to share pending logins and prevent repeated code exchange. Its tests run in the actual local workerd runtime with a D1 database. The Node relay retains memory storage for local development and Firestore for self-hosting. See [Cloudflare setup](relay/cloudflare/README.md), [Node relay setup](relay/README.md), and the [authentication design](docs/auth-design.md). The App client secret stays on the server, and images continue to upload directly to GitHub.
 
 ```bash
 npm ci
 npm ci --prefix relay # relay dependencies, installed separately from the plugin
+npm ci --prefix relay/cloudflare # Cloudflare development and testing tools
 npm run dev           # watch build
 npm run build         # type-check and production bundle
 npm test              # mocked plugin and API regression tests
 npm run test:relay    # local HTTP relay with a mocked GitHub upstream
+npm run test:cloudflare # Workers API, D1, runtime integration, and configuration tests
 npm run test:browser  # production-bundle settings UI and real HEIC conversion
 ```
 
