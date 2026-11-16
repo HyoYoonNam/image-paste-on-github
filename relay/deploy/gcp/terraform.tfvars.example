@@ -1,0 +1,12 @@
+project_id = "your-existing-project-id"
+region     = "asia-northeast3"
+
+# First apply creates infrastructure without a public service or secret contents.
+deploy_service = false
+public_access  = false
+
+# Fill these in after bootstrap. Use the GitHub App client ID, not numeric App ID.
+github_client_id      = ""
+github_app_slug       = ""
+github_secret_version = ""
+image                 = ""

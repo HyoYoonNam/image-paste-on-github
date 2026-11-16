@@ -20,6 +20,8 @@ Install and enable Image Paste on GitHub from [Obsidian's community plugins](htt
 
 > **Relay setup required:** This source tree does not include a hosted authentication service. Until an operator registers the GitHub App and deploys the relay, browser login is unavailable by default. Configure a trusted relay in **Advanced settings → Authentication relay**, or use the PAT option below. [Deployment guide](relay/README.md)
 
+Deploying on Google Cloud: the [Cloud Run guide](relay/deploy/gcp/README.md) includes Terraform for Firestore, Secret Manager, container hosting, and request-log exclusions. Register the App and add its secret after infrastructure bootstrap, then verify the private service before enabling public access.
+
 Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**.
 
 <details>
@@ -107,6 +109,8 @@ npm run test:browser  # production-bundle settings UI and real HEIC conversion
 ```
 
 Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The [Firestore emulator tests](relay/README.md#verification) additionally check independent servers, atomic code consumption, expiry, and uncertain commits. They must be run separately with an emulator; the ordinary relay suite skips them when no emulator is configured. The browser tests cover the settings UI and real HEIC conversion. All GitHub authentication in automated tests is mocked; a production App, HTTPS deployment, and desktop/mobile callback return still need live validation.
+
+The [GCP configuration tests](relay/deploy/gcp/README.md#설정-테스트) validate deployment settings with a mocked Google provider; they do not create cloud resources or verify live IAM and logging policies.
 
 The browser tests use installed Google Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium executable if needed. The HEIC test uses the [synthetic fixture](tests/fixtures/SOURCE.txt). Browser tests block external requests and stub the GitHub API. No token is needed.
 

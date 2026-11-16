@@ -51,6 +51,8 @@ For a local relay test, use `PUBLIC_BASE_URL=http://127.0.0.1:3000` and `ALLOW_H
 
 ### Container deployment
 
+For Google Cloud, use the [Cloud Run deployment guide](deploy/gcp/README.md). It provides Terraform, a dedicated Firestore database and service account, Secret Manager references, request-log exclusions, and tests with a mocked Google provider. Infrastructure bootstrap and public access are separate steps. No hosted service or GitHub App is provisioned by this repository alone.
+
 ```sh
 docker build -t image-paste-auth ./relay
 docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
