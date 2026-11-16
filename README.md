@@ -37,6 +37,11 @@ repository first, then create a token scoped to it:
    `assets`).
 5. Click **Test connection** to confirm push access and public visibility.
 
+Enter **Upload path** as a normal folder path, without URL encoding. Spaces,
+Unicode, `#`, `?`, parentheses, and literal `%` characters are encoded in the
+upload and image URLs while `/` keeps folders separate. Valid branch names with
+`/`, such as `feature/images`, are supported; enter the branch name as-is.
+
 When creating the token, restrict **Repository access** to your image repository and
 set **Contents** to **Read and write** (Metadata stays Read-only):
 

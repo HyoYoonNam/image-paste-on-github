@@ -59,6 +59,12 @@ const MIME_EXTENSIONS: Record<string, string> = {
 	"image/avif": "avif",
 };
 
+function encodePathSegment(value: string): string {
+	return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
+		`%${character.charCodeAt(0).toString(16).toUpperCase()}`
+	);
+}
+
 export default class ImagePasteOnGithubPlugin extends Plugin {
 	settings!: ImagePasteSettings;
 
@@ -290,8 +296,10 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 			/^\/+/,
 			""
 		);
+		const encodedPath = repoPath.split("/").map(encodePathSegment).join("/");
+		const repository = `${encodePathSegment(owner)}/${encodePathSegment(repo)}`;
 
-		const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${repoPath}`;
+		const apiUrl = `https://api.github.com/repos/${repository}/contents/${encodedPath}`;
 
 		const response = await requestUrl({
 			url: apiUrl,
@@ -316,9 +324,9 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 			throw new Error(detail);
 		}
 
-		return `https://raw.githubusercontent.com/${owner}/${repo}/${
-			branch || "main"
-		}/${repoPath}`;
+		return `https://raw.githubusercontent.com/${repository}/${
+			encodePathSegment(branch || "main")
+		}/${encodedPath}`;
 	}
 
 	isConfigured(): boolean {
@@ -491,7 +499,7 @@ class ImagePasteSettingTab extends PluginSettingTab {
 
 		try {
 			const response = await requestUrl({
-				url: `https://api.github.com/repos/${owner}/${repo}`,
+				url: `https://api.github.com/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}`,
 				method: "GET",
 				headers: {
 					Authorization: `Bearer ${githubToken}`,
