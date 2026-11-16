@@ -14,15 +14,15 @@ Install and enable Image Paste on GitHub from [Obsidian's community plugins](htt
 
 ## Quick start
 
-1. Create a **public image repository**. With a configured authentication relay, choose **GitHub App access → Choose repositories on GitHub** and install the App on **only that repository**, granting **Contents: read and write**.
+1. Create a **public image repository**. Choose **GitHub App access → Choose repositories on GitHub** and install [Image Paste on GitHub](https://github.com/apps/image-paste-on-github) on **only that repository**, granting **Contents: read and write**.
 2. Select **Connect with GitHub**, approve the browser login, then select **Return to Obsidian**. No PAT needs to be copied. If Obsidian opens another vault, return to the original vault and select **Complete sign in**.
 3. Choose the **Image repository**, check **Branch** and **Upload path**, then paste or drop an image into a Markdown note. Selecting a repository fills in its default branch.
 
-> **Relay setup required:** This source tree does not include a hosted authentication service. Until an operator registers the GitHub App and deploys the relay, browser login is unavailable by default. Configure a trusted relay in **Advanced settings → Authentication relay**, or use the PAT option below. [Deployment guide](relay/README.md)
+> **Release status:** Browser login is ready in source builds for the next plugin release. The published **1.1.0** release still uses PAT authentication.
 
-The [Cloudflare deployment guide](relay/cloudflare/README.md) uses **Workers Free and D1 Free**, with authentication disabled until the GitHub App and secret are configured. Keep the account on Free: requests fail at its limits instead of switching to paid usage. The optional [Cloud Run guide](relay/deploy/gcp/README.md) requires billing and does not meet a no-charge requirement.
+New source builds use the plugin maintainer's [hosted authentication relay](https://image-paste-auth.dev-rudevico.workers.dev/health) by default; users do not need to deploy a server or copy a PAT. It runs on **Cloudflare Workers Free and D1 Free**. Free-plan limits can temporarily interrupt sign-in or token renewal.
 
-Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**.
+Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**. Saved custom or empty relay addresses are also preserved. If an earlier source build saved an empty address, set **Authentication relay** to `https://image-paste-auth.dev-rudevico.workers.dev` to enable browser login.
 
 <details>
 <summary>Browser login, credentials, and disconnecting</summary>
@@ -96,7 +96,9 @@ Pending uploads stay tied to the original note when you switch tabs or rename it
 
 Plugin development requires Node.js 20 or later. The Node relay requires Node.js 22 or later; the Cloudflare tooling requires Node.js 22.12 or later.
 
-The Cloudflare relay uses Workers Web APIs and D1 atomic SQL batches to share pending logins and prevent repeated code exchange. Its tests run in the actual local workerd runtime with a D1 database. The Node relay retains memory storage for local development and Firestore for self-hosting. See [Cloudflare setup](relay/cloudflare/README.md), [Node relay setup](relay/README.md), and the [authentication design](docs/auth-design.md). The App client secret stays on the server, and images continue to upload directly to GitHub.
+The Cloudflare relay uses Workers Web APIs and D1 atomic SQL batches to share pending logins and prevent repeated code exchange. Its tests run in the actual local workerd runtime with a D1 database. Keep its account on Free: requests fail at its limits instead of switching to paid usage. The Node relay retains memory storage for local development and Firestore for self-hosting; the optional GCP setup requires billing. See [Cloudflare setup](relay/cloudflare/README.md), [Node relay setup](relay/README.md), and the [authentication design](docs/auth-design.md). The App client secret stays on the server, and images continue to upload directly to GitHub.
+
+For a self-hosted build, set `IMAGE_PASTE_AUTH_RELAY_URL` before building. An explicitly empty value disables the default relay. Tests cover the production bundle's default, overrides, and preservation of existing settings without contacting the hosted service.
 
 ```bash
 npm ci
@@ -110,13 +112,13 @@ npm run test:cloudflare # Workers API, D1, runtime integration, and configuratio
 npm run test:browser  # production-bundle settings UI and real HEIC conversion
 ```
 
-Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The [Firestore emulator tests](relay/README.md#verification) additionally check independent servers, atomic code consumption, expiry, and uncertain commits. They must be run separately with an emulator; the ordinary relay suite skips them when no emulator is configured. The browser tests cover the settings UI and real HEIC conversion. All GitHub authentication in automated tests is mocked; a production App, HTTPS deployment, and desktop/mobile callback return still need live validation.
+Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The [Firestore emulator tests](relay/README.md#verification) additionally check independent servers, atomic code consumption, expiry, and uncertain commits. They must be run separately with an emulator; the ordinary relay suite skips them when no emulator is configured. The browser tests cover the settings UI and real HEIC conversion. Automated tests mock GitHub; the hosted relay has also been checked with a real App login, desktop callback, and sample upload in Obsidian 1.12.7 on macOS. Mobile callback return still needs live validation.
 
 The [GCP configuration tests](relay/deploy/gcp/README.md#설정-테스트) validate deployment settings with a mocked Google provider; they do not create cloud resources or verify live IAM and logging policies.
 
 The browser tests use installed Google Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium executable if needed. The HEIC test uses the [synthetic fixture](tests/fixtures/SOURCE.txt). Browser tests block external requests and stub the GitHub API. No token is needed.
 
-To ship a default relay address, build with `IMAGE_PASTE_AUTH_RELAY_URL=https://YOUR-AUTH-DOMAIN npm run build`. This value is a public origin, never a client secret. Without it, the relay address is empty and browser sign-in stays disabled until configured. Keep server secrets in the relay deployment only.
+To override the hosted relay, build with `IMAGE_PASTE_AUTH_RELAY_URL=https://YOUR-AUTH-DOMAIN npm run build`. This value is a public origin, never a client secret. Keep server secrets in the relay deployment only.
 
 For manual testing, copy `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/image-paste-on-github/`.
 

@@ -154,16 +154,29 @@ test("배포 번들의 인증 설정 UI를 외부 요청 없이 검증한다", {
 	}
 	const button = (page, text) => page.locator("button").filter({ hasText: new RegExp(`^${text}$`) });
 
-	await t.test("처음 설치하면 GitHub 로그인을 안내하고 relay가 없으면 연결을 비활성화한다", async () => {
+	await t.test("처음 설치하면 기본 relay로 GitHub 연결 버튼을 활성화한다", async () => {
 		const page = await openPage(null);
-		assert.equal(await button(page, "Connect with GitHub").isDisabled(), true);
+		assert.equal(await button(page, "Connect with GitHub").isDisabled(), false);
 		assert.equal(await page.getByLabel("Image repository", { exact: true }).isVisible(), true);
 		assert.equal(await page.locator("details").evaluate(element => element.open), false);
 		assert.equal(await page.getByLabel("GitHub token", { exact: true }).isVisible(), false);
-		assert.match(await page.locator("body").innerText(), /Configure a trusted relay in Advanced settings/);
+		assert.match(await page.locator("body").innerText(), /Sign in through GitHub and select your image repository/);
 		assert.match(await page.locator("body").innerText(), /only for this session/);
-		const result = await page.evaluate(() => ({ mode: settingsTest.plugin.settings.authMode, requests: settingsTest.requests.length, opened: settingsTest.opened.length }));
-		assert.deepEqual(result, { mode: "github", requests: 0, opened: 0 });
+		const result = await page.evaluate(() => ({ mode: settingsTest.plugin.settings.authMode, relay: settingsTest.plugin.settings.authRelayUrl,
+			requests: settingsTest.requests.length, opened: settingsTest.opened.length }));
+		assert.equal(result.mode, "github");
+		assert.equal(new URL(result.relay).protocol, "https:");
+		assert.equal(result.requests, 0); assert.equal(result.opened, 0);
+	});
+
+	await t.test("명시적으로 빈 relay를 저장했으면 기본 주소로 바꾸지 않고 연결을 비활성화한다", async () => {
+		const page = await openPage({ authRelayUrl: "" });
+		assert.equal(await button(page, "Connect with GitHub").isDisabled(), true);
+		assert.match(await page.locator("body").innerText(), /Configure a trusted relay in Advanced settings/);
+		assert.equal(await page.locator("details").evaluate(element => element.open), false);
+		const result = await page.evaluate(() => ({ mode: settingsTest.plugin.settings.authMode, relay: settingsTest.plugin.settings.authRelayUrl,
+			requests: settingsTest.requests.length, opened: settingsTest.opened.length }));
+		assert.deepEqual(result, { mode: "github", relay: "", requests: 0, opened: 0 });
 	});
 
 	await t.test("기존 PAT 설정을 유지하고 비밀번호 입력을 닫힌 Advanced 안에 둔다", async () => {

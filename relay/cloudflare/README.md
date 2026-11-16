@@ -4,6 +4,14 @@ GitHub App 인증을 Workers와 D1에서 처리한다. 이미지는 Obsidian에�
 
 계정은 **Workers Free**로 유지한다. 이 구성은 유료 플랜 전환, 카드 등록, 추가 유료 제품을 요구하지 않는다. 무료 한도를 넘으면 서비스가 실패할 수 있으므로 유료 전환으로 해결하지 않고 사용량부터 확인한다. `usage_model`은 지정하지 않는다. [Workers 요금](https://developers.cloudflare.com/workers/platform/pricing/), [D1 요금](https://developers.cloudflare.com/d1/platform/pricing/)
 
+## 운영 인스턴스
+
+기본 relay는 `https://image-paste-auth.dev-rudevico.workers.dev`, 공개 App은 [Image Paste on GitHub](https://github.com/apps/image-paste-on-github)다. 플러그인을 빌드하면 이 origin이 기본값에 들어가며 기존 사용자 설정은 보존한다.
+
+2026-11-16에 Workers Free 계정으로 배포했다. D1 migration, 15분 Cron, 로그와 preview 비활성 설정을 적용했다. 실제 배포에서 health 200, 로그인 시작 200, 승인 전 완료 409, 취소 204, 취소 후 완료 404를 확인했다. macOS의 Obsidian 1.12.7에서 브라우저 로그인과 복귀, 저장소 선택, 샘플 PNG 업로드가 성공했고 로컬 이미지 첨부는 생기지 않았다.
+
+별도 검증 로그인으로 access token과 refresh token 교체, 갱신 후 저장소 조회 200, revoke 204, 폐기한 토큰의 GitHub 응답 401도 확인했다. 이 검증의 토큰은 메모리에서만 처리했다. 모바일 복귀와 장기 운영 부하는 아직 확인하지 않았다.
+
 ## 로컬 검증
 
 Node.js 22.12 이상을 사용하고 이 디렉터리에서 실행한다.
