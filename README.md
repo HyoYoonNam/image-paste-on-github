@@ -27,7 +27,7 @@ Existing PAT users keep their current authentication mode and token after upgrad
 
 The plugin uses GitHub App browser authorization with PKCE S256. The relay keeps the App client secret on the server, checks short-lived, single-use login transactions, and exchanges authorization codes and refresh tokens with GitHub. The browser-to-Obsidian link contains only random transaction and state values, never credentials or your vault name. **Images are uploaded directly to GitHub**, without passing through the relay.
 
-Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation; it does not persist them. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
+Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation. With Firestore enabled, it temporarily stores pending-login metadata and authorization codes; access tokens, refresh tokens, and PKCE verifiers are never persisted on the relay. Login transactions expire after ten minutes, although Firestore's physical TTL deletion can happen later. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
 
 Access tokens renew automatically when needed, with one refresh request shared by concurrent uploads. The new access and refresh tokens are saved together. Expired authorization, an uncertain refresh result, or lost credentials requires reconnecting; the plugin never silently switches to your saved PAT.
 
@@ -92,12 +92,13 @@ Pending uploads stay tied to the original note when you switch tabs or rename it
 <details>
 <summary>Development and license</summary>
 
-Development requires Node.js 20 or later.
+Plugin development requires Node.js 20 or later. The authentication relay requires Node.js 22 or later.
 
-The optional GitHub App authentication relay has no runtime dependencies. See [relay setup and deployment](relay/README.md) and the [authentication design](docs/auth-design.md). Its client secret stays on the server, and images continue to upload directly to GitHub. A real GitHub App and HTTPS deployment must be configured separately.
+The optional GitHub App authentication relay uses the official Firestore SDK to share pending logins across server instances and restarts. Memory storage remains available for local development; Cloud Run requires Firestore. See [relay setup and deployment](relay/README.md) and the [authentication design](docs/auth-design.md). Its client secret stays on the server, and images continue to upload directly to GitHub. A real GitHub App and HTTPS deployment must be configured separately.
 
 ```bash
 npm ci
+npm ci --prefix relay # relay dependencies, installed separately from the plugin
 npm run dev           # watch build
 npm run build         # type-check and production bundle
 npm test              # mocked plugin and API regression tests
@@ -105,7 +106,7 @@ npm run test:relay    # local HTTP relay with a mocked GitHub upstream
 npm run test:browser  # production-bundle settings UI and real HEIC conversion
 ```
 
-Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The browser tests cover the settings UI and real HEIC conversion. All GitHub authentication in automated tests is mocked; a production App, HTTPS deployment, and desktop/mobile callback return still need live validation.
+Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The [Firestore emulator tests](relay/README.md#verification) additionally check independent servers, atomic code consumption, expiry, and uncertain commits. They must be run separately with an emulator; the ordinary relay suite skips them when no emulator is configured. The browser tests cover the settings UI and real HEIC conversion. All GitHub authentication in automated tests is mocked; a production App, HTTPS deployment, and desktop/mobile callback return still need live validation.
 
 The browser tests use installed Google Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium executable if needed. The HEIC test uses the [synthetic fixture](tests/fixtures/SOURCE.txt). Browser tests block external requests and stub the GitHub API. No token is needed.
 

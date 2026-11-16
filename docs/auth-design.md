@@ -8,6 +8,7 @@ GitHub App의 브라우저 OAuth와 PKCE를 사용한다. 플러그인은 인증
 
 - `client_secret`은 서버 환경 변수에만 둔다. 플러그인 번들, 설정, 브라우저 URL에 포함하지 않는다. App private key는 사용하지 않는다.
 - 서버는 토큰 교환과 갱신 과정에서 사용자 토큰을 일시적으로 처리하지만, 데이터베이스나 파일에 저장하지 않는다. 이미지, 노트 내용도 받지 않는다.
+- Firestore 모드에서는 로그인 대기 상태와 authorization code를 저장한다. 원본 OAuth state 대신 SHA-256 해시를 색인으로 사용하고, PKCE verifier와 사용자 토큰은 저장하지 않는다. 코드는 완료 요청이 선점되면 문서에서 제거한다.
 - Obsidian의 `SecretStorage`가 있으면 OAuth 세션을 보관한다. 이 API가 없는 이전 버전은 메모리에서만 세션을 유지하고, 앱을 다시 열면 로그인한다. OAuth 토큰을 `data.json`에 저장하는 대체 경로는 두지 않는다.
 - 기존 PAT 설정은 고급 설정에 유지한다. GitHub 로그인 실패 시 PAT로 자동 전환하지 않는다. PAT를 선택한 경우 기존 평문 저장 방식이 적용된다.
 - OAuth 세션은 토큰을 발급한 relay 주소에 묶는다. 다른 서버로 주소를 바꾸기 전에 연결을 해제해야 하며, 기존 refresh token을 새 주소로 전송하지 않는다.
@@ -49,7 +50,13 @@ GitHub의 PKCE 지원은 `client_secret` 요구를 없애지 않는다. 따라�
 
 ## 만료, 취소, 재시도
 
-트랜잭션은 최대 10분 동안 서버 메모리에만 유지한다. 만료되거나 서버가 재시작되면 로그인을 다시 시작한다. 서버는 단일 인스턴스로 운영한다. 여러 인스턴스로 확장하려면 상태 공유가 추가로 필요하다.
+트랜잭션의 유효기간은 최대 10분이다. 로컬 개발용 `memory` 모드는 한 프로세스에서만 동작하고 재시작하면 대기 상태가 사라진다. `firestore` 모드는 같은 프로젝트, 데이터베이스, collection prefix를 사용하는 인스턴스끼리 대기 상태를 공유하므로 callback과 완료 요청이 다른 인스턴스로 가거나 서버가 재시작돼도 이어서 처리할 수 있다. Cloud Run에서는 Firestore 설정이 없으면 시작하지 않는다. 플러그인 자체가 재시작되어 로컬 verifier를 잃은 경우에는 다시 로그인해야 한다.
+
+Firestore는 트랜잭션 문서와 OAuth state 해시 색인 문서에 `expireAt` Timestamp를 저장한다. TTL 삭제는 지연될 수 있으므로 모든 인증 연산에서 `expiresAt`을 직접 검사한다. 10분은 인증 유효기간이며 저장 데이터의 물리 삭제 기한은 아니다. 완료와 취소는 두 문서를 삭제하고, 중단된 로그인의 잔여 문서는 TTL 정책으로 정리한다.
+
+callback 수신, verifier 검증, 완료 선점, 취소를 Firestore 트랜잭션으로 처리한다. 정상 완료 요청은 `consuming` 상태와 code 제거를 먼저 커밋한 뒤 GitHub를 호출한다. Firestore가 충돌로 트랜잭션 함수를 재실행해도 외부 코드 교환은 반복되지 않는다. 선점 커밋의 성공 여부가 불확실하면 GitHub 교환을 시작하지 않는다. 교환 뒤 정리가 실패해도 이미 소비된 문서를 되살리지 않는다. 저장소 장애는 원문 내용을 노출하지 않는 `503 unavailable`로 처리한다.
+
+완료 선점은 최대 10초 동안 기다린다. 제한 시간이 지나면 `503`을 반환하고, 뒤늦게 커밋이 성공해도 GitHub 교환을 시작하지 않는다. 선점이 끝나기 전에 클라이언트 연결이 끊어진 경우에도 교환을 건너뛰고 소비된 상태를 정리한다.
 
 취소 요청도 verifier로 소유를 확인한다. 로그아웃, 플러그인 종료, 새 로그인 시작 시 플러그인은 이전 대기 상태를 무효화한다. 늦게 도착한 callback이나 응답으로 취소한 세션을 복원하지 않는다.
 
@@ -69,7 +76,7 @@ GitHub는 refresh token을 사용하면 이전 refresh token과 access token을 
 
 - callback URL은 서버의 고정 공개 주소로 만든다. 요청의 `Host`, `X-Forwarded-Host`를 사용하지 않는다.
 - GitHub 요청 대상과 client ID는 서버 설정으로 고정한다. 요청 본문에서 upstream 주소나 client secret을 받지 않으며, upstream redirect를 따라가지 않는다.
-- JSON 본문 크기, 필드 길이, 요청 시간, GitHub 응답 크기, 동시 요청 수, 대기 트랜잭션 수를 제한한다. 시작, 완료, 갱신, 회수 요청에는 IP 기준 요청 제한을 둔다.
+- JSON 본문 크기, 필드 길이, 요청 시간, GitHub 응답 크기, 동시 요청 수를 제한한다. 메모리 모드의 대기 트랜잭션은 1,000개로 제한한다. Firestore에는 전역 트랜잭션 수 제한이 없으며, 요청 제한과 upstream 동시성 제한도 인스턴스별이다. 공개 서비스의 전체 요청량과 비용은 별도로 관리해야 한다.
 - 프록시 주소 헤더는 신뢰할 프록시를 명시적으로 구성한 경우에만 사용한다. 공개 클라이언트의 CORS나 Origin 검사는 인증을 대신하지 않는다.
 - callback 페이지는 외부 스크립트와 리소스를 사용하지 않는다. 고정 링크의 값은 URL 인코딩과 HTML escaping을 적용하고, `no-store`, `Referrer-Policy: no-referrer`, 제한적인 CSP를 적용한다.
 - 애플리케이션과 역방향 프록시는 callback query, 요청 본문, Authorization 헤더, 코드, 토큰을 로그에 남기지 않는다. 오류 응답은 정해진 코드와 문구로 제한한다.
@@ -78,6 +85,8 @@ GitHub는 refresh token을 사용하면 이전 refresh token과 access token을 
 ## 검증 기준
 
 모의 GitHub를 사용하는 테스트는 정상 로그인 외에 잘못된 state와 verifier, callback 재사용, 동시 완료 요청, 만료, 취소, 승인 전 완료 요청, GitHub 거절, timeout과 잘못된 응답을 확인한다. callback HTML과 deep link에 code나 토큰이 없어야 하고, 처리된 code를 다시 교환할 수 없어야 한다.
+
+Firestore 테스트는 공식 에뮬레이터에 연결한 서로 다른 SDK 클라이언트와 HTTP 서버로 인스턴스 간 callback, 동시 완료, 취소 경쟁, 재시작 후 재사용 거절, 만료 문서, 불확실한 커밋을 확인한다. 에뮬레이터 없이 실행한 일반 테스트는 이를 건너뛰고, 전용 테스트 명령은 에뮬레이터가 없으면 실패한다. 실제 GCP IAM, TTL 물리 삭제, 로그 라우팅은 배포 환경에서 별도로 확인한다.
 
 플러그인 테스트는 다른 vault의 callback 무시, 수동 완료, 로그인 중 취소와 종료, 동시 갱신, 갱신 중 로그아웃, 토큰 저장 실패, relay 주소 변경, PAT로 자동 전환하지 않는 동작을 확인한다. `tests/auth-relay.test.cjs`는 실제 클라이언트와 로컬 HTTP relay를 연결해 PKCE 계산, callback HTML, 갱신, 취소를 확인하되 GitHub 응답은 모의 처리한다. 외부 GitHub 계정이나 secret은 사용하지 않는다.
 

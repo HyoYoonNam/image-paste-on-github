@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { MemoryTransactionStore, StoreError, createStoreFromEnvironment } from './transaction-store.mjs';
 
 const TTL_MS = 10 * 60 * 1000;
 const BODY_LIMIT = 16 * 1024;
@@ -42,12 +43,6 @@ function text(value, maximum = 4096) {
 
 function exactKeys(body, keys) {
   if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).length !== keys.length || !keys.every((key) => Object.hasOwn(body, key))) fail(400);
-}
-
-function equal(left, right) {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function escapeHtml(value) {
@@ -144,32 +139,26 @@ function validateConfig(config) {
   return { ...config, publicBaseUrl: base.origin, allowedOrigins };
 }
 
-export function createRelayServer(configuration, { fetch: fetchUpstream = globalThis.fetch, now = Date.now } = {}) {
+export function createRelayServer(configuration, { fetch: fetchUpstream = globalThis.fetch, now = Date.now, store: suppliedStore } = {}) {
   const config = validateConfig(configuration);
   const callbackUrl = `${config.publicBaseUrl}/auth/callback`;
   const installationUrl = `https://github.com/apps/${config.appSlug}/installations/new`;
-  const transactions = new Map();
-  const oauthStates = new Map();
   const rates = new Map();
   const maxTransactions = config.maxTransactions ?? 1000;
   const maxUpstreamRequests = config.maxUpstreamRequests ?? 32;
   const rateLimit = config.rateLimit ?? 120;
   const maxRateClients = config.maxRateClients ?? 10000;
   const timeoutMs = config.upstreamTimeoutMs ?? 10000;
+  const claimTimeoutMs = config.claimTimeoutMs ?? 10000;
   let upstreamRequests = 0;
-  for (const value of [maxTransactions, maxUpstreamRequests, rateLimit, maxRateClients, timeoutMs]) {
+  for (const value of [maxTransactions, maxUpstreamRequests, rateLimit, maxRateClients, timeoutMs, claimTimeoutMs]) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Server limits must be positive integers.');
   }
-
-  function discard(id) {
-    const transaction = transactions.get(id);
-    if (transaction) oauthStates.delete(transaction.oauthState);
-    transactions.delete(id);
-  }
+  const store = suppliedStore ?? new MemoryTransactionStore({ maxTransactions, now });
 
   function prune() {
     const time = now();
-    for (const [id, transaction] of transactions) if (transaction.expiresAt <= time) discard(id);
+    if (!suppliedStore) store.prune();
     for (const [key, rate] of rates) if (rate.until <= time) rates.delete(key);
   }
 
@@ -187,15 +176,21 @@ export function createRelayServer(configuration, { fetch: fetchUpstream = global
   function proof(body) {
     exactKeys(body, ['transactionId', 'codeVerifier']);
     if (typeof body.transactionId !== 'string' || !BASE64URL.test(body.transactionId) || typeof body.codeVerifier !== 'string' || !VERIFIER.test(body.codeVerifier)) fail(400);
-    const transaction = transactions.get(body.transactionId);
-    if (!transaction) fail(404, 'transaction_not_found');
-    if (transaction.expiresAt <= now()) {
-      discard(body.transactionId);
-      fail(404, 'transaction_not_found');
+    return createHash('sha256').update(body.codeVerifier).digest('base64url');
+  }
+
+  async function claim(id, challenge) {
+    let timer;
+    try {
+      return await Promise.race([
+        store.claim(id, challenge),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new HttpError(503, 'unavailable')), claimTimeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
-    const challenge = createHash('sha256').update(body.codeVerifier).digest('base64url');
-    if (!equal(challenge, transaction.codeChallenge)) fail(403, 'invalid_proof');
-    return transaction;
   }
 
   async function exchange(fields) {
@@ -247,17 +242,12 @@ export function createRelayServer(configuration, { fetch: fetchUpstream = global
       if (request.method === 'GET' && url.pathname === '/auth/callback') {
         const state = url.searchParams.get('state');
         if (!BASE64URL.test(state ?? '') || url.searchParams.getAll('state').length !== 1) fail(400);
-        const id = oauthStates.get(state);
-        const transaction = transactions.get(id);
-        if (!transaction) fail(404, 'transaction_not_found');
-        if (transaction.status !== 'pending') fail(409, 'transaction_consumed');
         const code = url.searchParams.get('code');
         const error = url.searchParams.get('error');
         if ((code && error) || (!code && !error) || url.searchParams.getAll('code').length > 1 || url.searchParams.getAll('error').length > 1 || (code && !text(code, 1024))) fail(400);
-        transaction.status = error ? 'denied' : 'authorized';
-        if (code) transaction.code = code;
+        const transaction = await store.callback(state, { code, denied: Boolean(error) });
         const link = new URL(DEEP_LINK);
-        link.searchParams.set('transaction_id', id);
+        link.searchParams.set('transaction_id', transaction.transactionId);
         link.searchParams.set('state', transaction.clientState);
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         response.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Return to Obsidian</title><h1>Return to Obsidian</h1><p>Continue in Image Paste on GitHub to finish signing in.</p><p><a href="${escapeHtml(link.toString())}">Return to Obsidian</a></p></html>`);
@@ -268,12 +258,10 @@ export function createRelayServer(configuration, { fetch: fetchUpstream = global
       if (url.pathname === '/auth/start') {
         exactKeys(body, ['codeChallenge', 'clientState']);
         if (typeof body.codeChallenge !== 'string' || !BASE64URL.test(body.codeChallenge) || typeof body.clientState !== 'string' || !BASE64URL.test(body.clientState)) fail(400);
-        if (transactions.size >= maxTransactions) fail(429, 'rate_limited');
         const id = randomBytes(32).toString('base64url');
         const oauthState = randomBytes(32).toString('base64url');
         const expiresAt = now() + TTL_MS;
-        transactions.set(id, { ...body, oauthState, expiresAt, status: 'pending' });
-        oauthStates.set(oauthState, id);
+        await store.create({ ...body, transactionId: id, oauthState, expiresAt });
         const authorization = new URL('https://github.com/login/oauth/authorize');
         authorization.search = new URLSearchParams({
           client_id: config.clientId, redirect_uri: callbackUrl, state: oauthState,
@@ -281,26 +269,22 @@ export function createRelayServer(configuration, { fetch: fetchUpstream = global
         }).toString();
         json(response, 200, { transactionId: id, authorizationUrl: authorization.toString(), expiresAt });
       } else if (url.pathname === '/auth/cancel') {
-        const transaction = proof(body);
-        if (transaction.status === 'consuming') fail(409, 'transaction_consumed');
-        discard(body.transactionId);
+        const challenge = proof(body);
+        await store.cancel(body.transactionId, challenge);
         response.writeHead(204).end();
       } else if (url.pathname === '/auth/complete') {
-        const transaction = proof(body);
-        if (transaction.status === 'pending') fail(409, 'authorization_pending');
-        if (transaction.status === 'consuming') fail(409, 'transaction_consumed');
-        if (transaction.status === 'denied') {
-          discard(body.transactionId);
-          fail(400, 'user_denied');
-        }
-        transaction.status = 'consuming';
-        const code = transaction.code;
-        delete transaction.code;
+        // The store must commit the one-time claim before any external exchange.
+        // An uncertain commit throws, so its code is never sent to GitHub.
+        const challenge = proof(body);
+        const transaction = await claim(body.transactionId, challenge);
         try {
-          const pair = await exchange({ code, code_verifier: body.codeVerifier, redirect_uri: callbackUrl });
+          if (response.destroyed || response.writableEnded) return;
+          if (transaction.denied) fail(400, 'user_denied');
+          const pair = await exchange({ code: transaction.code, code_verifier: body.codeVerifier, redirect_uri: callbackUrl });
           json(response, 200, pair);
         } finally {
-          discard(body.transactionId);
+          // Cleanup failure leaves a consumed record until TTL cleanup, never a reusable code.
+          await store.finish(body.transactionId).catch(() => {});
         }
       } else if (url.pathname === '/auth/refresh') {
         exactKeys(body, ['refreshToken']);
@@ -334,7 +318,7 @@ export function createRelayServer(configuration, { fetch: fetchUpstream = global
       }
     } catch (error) {
       if (response.destroyed || response.writableEnded) return;
-      const known = error instanceof HttpError;
+      const known = error instanceof HttpError || error instanceof StoreError;
       const status = known ? error.status : 503;
       const code = known ? error.code : 'unavailable';
       if (status === 429) response.setHeader('Retry-After', '60');
@@ -347,7 +331,11 @@ export function createRelayServer(configuration, { fetch: fetchUpstream = global
   server.keepAliveTimeout = 5000;
   const cleanup = setInterval(prune, 60000);
   cleanup.unref();
-  server.on('close', () => { clearInterval(cleanup); transactions.clear(); oauthStates.clear(); rates.clear(); });
+  server.on('close', () => {
+    clearInterval(cleanup);
+    rates.clear();
+    if (!suppliedStore) void store.close();
+  });
   return server;
 }
 
@@ -366,9 +354,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     const port = Number(process.env.PORT ?? 3000);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer from 1 to 65535.');
-    const server = createRelayServer(configFromEnvironment());
-    server.listen(port, process.env.HOST ?? '127.0.0.1', () => console.log(`Authentication relay listening on port ${port}.`));
-    for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
+    const config = configFromEnvironment();
+    validateConfig(config);
+    const store = await createStoreFromEnvironment();
+    const server = createRelayServer(config, { store });
+    server.listen(port, process.env.HOST ?? (process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1'), () => console.log(`Authentication relay listening on port ${port}.`));
+    for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(async () => {
+      await store.close().catch(() => {});
+      process.exit(0);
+    }));
   } catch {
     console.error('Authentication relay configuration is invalid. Check the documented environment variables.');
     process.exitCode = 1;

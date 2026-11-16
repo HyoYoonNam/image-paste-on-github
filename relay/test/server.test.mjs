@@ -4,6 +4,7 @@ import { request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import test from 'node:test';
 import { configFromEnvironment, createRelayServer } from '../server.mjs';
+import { MemoryTransactionStore } from '../transaction-store.mjs';
 
 const CONFIG = {
   clientId: 'Iv1.test-client', clientSecret: 'server-only-secret', appSlug: 'image-paste-test',
@@ -21,6 +22,7 @@ async function fixture(t, options = {}) {
   let time = 1700000000000;
   const calls = [];
   const server = createRelayServer({ ...CONFIG, ...options.config }, {
+    store: options.store,
     now: () => time,
     fetch: async (url, init) => {
       calls.push({ url, ...init });
@@ -346,4 +348,124 @@ test('configuration requires a server secret and a fixed HTTPS origin or explici
     GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret', GITHUB_APP_SLUG: 'slug', PUBLIC_BASE_URL: 'https://auth.test',
     ALLOWED_ORIGINS: 'https://one.test, https://two.test', ALLOW_HTTP_LOOPBACK: 'true',
   }), { clientId: 'id', clientSecret: 'secret', appSlug: 'slug', publicBaseUrl: 'https://auth.test', allowHttpLoopback: true, allowedOrigins: ['https://one.test', 'https://two.test'] });
+});
+
+test('an uncertain store claim commit never starts GitHub exchange or reuses the committed code', async (t) => {
+  const store = new MemoryTransactionStore({ now: () => 1700000000000 });
+  const claim = store.claim.bind(store);
+  store.claim = async (...args) => {
+    await claim(...args);
+    throw new Error('database response lost with private diagnostic');
+  };
+  const f = await fixture(t, { store });
+  const tx = await f.start();
+  await f.callback(tx);
+  const body = { transactionId: tx.transactionId, codeVerifier: verifier };
+  const uncertain = await f.post('/auth/complete', body);
+  assert.equal(uncertain.status, 503);
+  assert.ok(!(await uncertain.text()).includes('private diagnostic'));
+  assert.equal(store.transactions.get(tx.transactionId).status, 'consuming');
+  assert.equal(store.transactions.get(tx.transactionId).code, undefined);
+  assert.equal((await f.post('/auth/complete', body)).status, 409);
+  assert.equal(f.calls.length, 0);
+});
+
+test('failed cleanup leaves a consumed record and never turns a successful exchange into a second exchange', async (t) => {
+  const store = new MemoryTransactionStore({ now: () => 1700000000000 });
+  store.finish = async () => { throw new Error('cleanup unavailable'); };
+  const f = await fixture(t, { store });
+  const tx = await f.start();
+  await f.callback(tx);
+  const body = { transactionId: tx.transactionId, codeVerifier: verifier };
+  const response = await f.post('/auth/complete', body);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), PAIR);
+  assert.equal((await f.post('/auth/complete', body)).status, 409);
+  assert.equal(store.transactions.get(tx.transactionId).status, 'consuming');
+  assert.equal(store.transactions.get(tx.transactionId).code, undefined);
+  assert.equal(f.calls.length, 1);
+});
+
+test('store outages return sanitized 503 responses without falling back to an instance-local login', async (t) => {
+  const store = new MemoryTransactionStore();
+  store.create = async () => { throw new Error('sensitive database connection metadata'); };
+  const f = await fixture(t, { store });
+  const response = await f.post('/auth/start', { codeChallenge: challenge, clientState });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, 'unavailable');
+  assert.equal(store.transactions.size, 0);
+  assert.equal(f.calls.length, 0);
+});
+
+test('a late successful claim after the deadline stays consumed and never starts GitHub exchange', async (t) => {
+  const store = new MemoryTransactionStore({ now: () => 1700000000000 });
+  const originalClaim = store.claim.bind(store);
+  let release;
+  let committed;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const completed = new Promise((resolve) => { committed = resolve; });
+  store.claim = async (...args) => {
+    await gate;
+    const result = await originalClaim(...args);
+    committed();
+    return result;
+  };
+  const f = await fixture(t, { store, config: { claimTimeoutMs: 10 } });
+  const tx = await f.start();
+  await f.callback(tx);
+  const response = await f.post('/auth/complete', { transactionId: tx.transactionId, codeVerifier: verifier });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, 'unavailable');
+  release();
+  await completed;
+  await new Promise(setImmediate);
+  assert.equal(store.transactions.get(tx.transactionId).status, 'consuming');
+  assert.equal(store.transactions.get(tx.transactionId).code, undefined);
+  assert.equal(f.calls.length, 0);
+  const retry = await f.post('/auth/complete', { transactionId: tx.transactionId, codeVerifier: verifier });
+  assert.equal(retry.status, 409);
+  assert.equal(f.calls.length, 0);
+});
+
+test('a store rejection after the claim deadline is handled without an unhandled rejection', async (t) => {
+  const store = new MemoryTransactionStore({ now: () => 1700000000000 });
+  let reject;
+  store.claim = () => new Promise((_, no) => { reject = no; });
+  const f = await fixture(t, { store, config: { claimTimeoutMs: 10 } });
+  const tx = await f.start();
+  const response = await f.post('/auth/complete', { transactionId: tx.transactionId, codeVerifier: verifier });
+  assert.equal(response.status, 503);
+  reject(new Error('late database failure'));
+  await new Promise(setImmediate);
+  assert.equal(f.calls.length, 0);
+});
+
+test('a disconnected client does not start an exchange after the claim commits and the claim is cleaned up', async (t) => {
+  const store = new MemoryTransactionStore({ now: () => 1700000000000 });
+  const originalClaim = store.claim.bind(store);
+  let release;
+  let entered;
+  let finished;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const called = new Promise((resolve) => { entered = resolve; });
+  const cleanup = new Promise((resolve) => { finished = resolve; });
+  store.claim = async (...args) => { entered(); await gate; return originalClaim(...args); };
+  const originalFinish = store.finish.bind(store);
+  store.finish = async (id) => { await originalFinish(id); finished(); };
+  const f = await fixture(t, { store });
+  const tx = await f.start();
+  await f.callback(tx);
+  let disconnected;
+  const closed = new Promise((resolve) => { disconnected = resolve; });
+  f.server.once('request', (_request, response) => response.once('close', disconnected));
+  const request = httpRequest(`${f.base}/auth/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  request.on('error', () => {});
+  request.end(JSON.stringify({ transactionId: tx.transactionId, codeVerifier: verifier }));
+  await called;
+  request.destroy();
+  await closed;
+  release();
+  await cleanup;
+  assert.equal(store.transactions.has(tx.transactionId), false);
+  assert.equal(f.calls.length, 0);
 });

@@ -2,9 +2,15 @@
   "name": "image-paste-on-github-auth-relay",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:firestore": "REQUIRE_FIRESTORE_EMULATOR=1 node --test test/firestore-emulator.test.mjs"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "9.4.1"
   }
 }
