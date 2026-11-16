@@ -12,6 +12,7 @@ import {
 	normalizePath,
 	requestUrl,
 } from "obsidian";
+import { convertHeicToJpeg } from "./heic";
 
 interface GithubErrorResponse {
 	message?: string;
@@ -59,6 +60,20 @@ const MIME_EXTENSIONS = new Map<string, string>([
 	["image/avif", "avif"],
 ]);
 
+const HEIC_EXTENSIONS = new Map<string, string>([
+	["image/heic", "heic"],
+	["image/heif", "heif"],
+]);
+const UPLOAD_CANCELLED = Symbol("upload-cancelled");
+
+function heicExtension(image: File): string | undefined {
+	const namedExtension = /\.(heic|heif)$/i.exec(image.name)?.[1].toLowerCase();
+	const extension = HEIC_EXTENSIONS.get(image.type);
+	if (extension) return namedExtension ?? extension;
+	if (image.type !== "") return undefined;
+	return namedExtension;
+}
+
 function imageExtension(type: string): string {
 	const extension = MIME_EXTENSIONS.get(type);
 	if (!extension) throw new Error(`Unsupported image type: ${type || "unknown"}`);
@@ -73,9 +88,13 @@ function encodePathSegment(value: string): string {
 
 export default class ImagePasteOnGithubPlugin extends Plugin {
 	settings!: ImagePasteSettings;
+	private active = false;
+	private conversionQueue: Promise<void> = Promise.resolve();
 
 	async onload() {
+		this.active = true;
 		await this.loadSettings();
+		if (!this.active) return;
 
 		this.registerEvent(
 			this.app.workspace.on("editor-paste", (evt, editor, info) => {
@@ -98,7 +117,9 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		this.addSettingTab(new ImagePasteSettingTab(this.app, this));
 	}
 
-	onunload() {}
+	onunload() {
+		this.active = false;
+	}
 
 	// Returns true when we take over the paste/drop so the caller can call
 	// evt.preventDefault() and suppress the default local-save behaviour.
@@ -107,11 +128,12 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		info: MarkdownFileInfo,
 		fileList: FileList | null | undefined
 	): boolean {
+		if (!this.active) return false;
 		if (!fileList || fileList.length === 0) return false;
 
 		const images = Array.from(fileList);
 		// 이벤트 전체를 가로채므로 지원하지 않는 첨부가 섞이면 기본 처리에 맡긴다.
-		if (!images.every((file) => MIME_EXTENSIONS.has(file.type))) return false;
+		if (!images.every((file) => MIME_EXTENSIONS.has(file.type) || heicExtension(file))) return false;
 		const file = info.file;
 		if (!file || file.extension.toLowerCase() !== "md") return false;
 		const target: UploadTarget = { file, editor };
@@ -138,12 +160,25 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		const placeholder = `![${token}]()`;
 
 		target.editor.replaceSelection(placeholder + "\n");
+		let uploadImage = image;
+		const originalExtension = heicExtension(image);
+		if (originalExtension) {
+			try {
+				const converted = await this.prepareHeic(target, image, placeholder);
+				if (!converted) return;
+				uploadImage = converted;
+			} catch (err) {
+				await this.handleConversionFailure(target, image, placeholder, originalExtension, err);
+				return;
+			}
+		}
 
 		let url: string;
 		try {
-			url = await this.uploadToGithub(image);
+			url = await this.uploadToGithub(uploadImage, () => this.hasPlaceholder(target, placeholder));
 		} catch (err) {
-			await this.handleUploadFailure(target, image, placeholder, err);
+			if (err === UPLOAD_CANCELLED || !this.active) return;
+			await this.handleUploadFailure(target, uploadImage, placeholder, err);
 			return;
 		}
 
@@ -154,6 +189,65 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 			if (!this.targetExists(target)) return;
 			console.error("Image Paste on GitHub note update failed:", err);
 			new Notice(`Image uploaded, but the original note could not be updated: ${url}`);
+		}
+	}
+
+	private async prepareHeic(target: UploadTarget, image: File, placeholder: string): Promise<File | null> {
+		if (!(await this.hasPlaceholder(target, placeholder)) || !this.active) return null;
+		const conversion = this.conversionQueue.then(async () => {
+			if (!(await this.hasPlaceholder(target, placeholder)) || !this.active) return null;
+			const converted = await convertHeicToJpeg(image);
+			if (!(await this.hasPlaceholder(target, placeholder)) || !this.active) return null;
+			return converted;
+		});
+		// 앞선 변환이 실패해도 다음 이미지는 처리한다.
+		this.conversionQueue = conversion.then(() => undefined, () => undefined);
+		return conversion;
+	}
+
+	private async handleConversionFailure(
+		target: UploadTarget,
+		image: File,
+		placeholder: string,
+		extension: string,
+		err: unknown
+	) {
+		const detail = err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+		const nextStep = "Export the original as JPEG and try again.";
+		try {
+			if (!(await this.hasPlaceholder(target, placeholder)) || !this.active) return;
+			console.error("Image Paste on GitHub HEIC conversion failed:", err);
+			let message = `HEIC conversion failed (${detail}); no file was uploaded.`;
+			if (this.settings.fallbackToLocal) {
+				let saved: TFile | null = null;
+				try {
+					saved = await this.saveAttachment(target, image, placeholder, extension);
+					if (!saved) return;
+				} catch (saveErr) {
+					console.error("Image Paste on GitHub original file save failed:", saveErr);
+					message = `HEIC conversion failed (${detail}); the original file could not be saved.`;
+				}
+				if (saved) {
+					const file = saved;
+					try {
+						if (await this.replaceToken(target, placeholder, () =>
+							this.app.fileManager.generateMarkdownLink(file, target.file.path).replace(/^!/, "")
+						)) {
+							new Notice(`HEIC conversion failed (${detail}); original file saved to the vault. ${nextStep}`);
+						}
+					} catch (updateErr) {
+						if (!this.targetExists(target)) return;
+						console.error("Image Paste on GitHub note update failed:", updateErr);
+						new Notice(`HEIC conversion failed; original file saved to ${file.path}, but the note could not be updated. ${nextStep}`);
+					}
+					return;
+				}
+			}
+			if (await this.replaceToken(target, placeholder, "")) new Notice(`${message} ${nextStep}`);
+		} catch (updateErr) {
+			if (!this.targetExists(target)) return;
+			console.error("Image Paste on GitHub conversion failure handling failed:", updateErr);
+			new Notice(`HEIC conversion failed (${detail}); the original note could not be updated. ${nextStep}`);
 		}
 	}
 
@@ -207,22 +301,31 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 
 	private async saveLocally(target: UploadTarget, image: File, placeholder: string): Promise<TFile | null> {
 		const ext = imageExtension(image.type);
+		return this.saveAttachment(target, image, placeholder, ext);
+	}
+
+	private async saveAttachment(
+		target: UploadTarget,
+		image: File,
+		placeholder: string,
+		extension: string
+	): Promise<TFile | null> {
 		if (!(await this.hasPlaceholder(target, placeholder))) return null;
 		const filename = `pasted-${Date.now()}-${Math.random()
 			.toString(36)
-			.slice(2, 8)}.${ext}`;
+			.slice(2, 8)}.${extension}`;
 		const buffer = await image.arrayBuffer();
 		const targetPath =
 			await this.app.fileManager.getAvailablePathForAttachment(
 				filename,
 				target.file.path
 			);
-		if (!(await this.hasPlaceholder(target, placeholder))) return null;
+		if (!(await this.hasPlaceholder(target, placeholder)) || !this.targetExists(target)) return null;
 		return this.app.vault.createBinary(targetPath, buffer);
 	}
 
 	private targetExists(target: UploadTarget): boolean {
-		return this.app.vault.getAbstractFileByPath(target.file.path) === target.file;
+		return this.active && this.app.vault.getAbstractFileByPath(target.file.path) === target.file;
 	}
 
 	private sourceEditor(target: UploadTarget): Editor | undefined {
@@ -239,7 +342,16 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		if (!this.targetExists(target)) return false;
 		const editor = this.sourceEditor(target);
 		if (editor) return editor.getValue().includes(placeholder);
-		const content = await this.app.vault.read(target.file);
+		let content: string;
+		try {
+			content = await this.app.vault.read(target.file);
+		} catch (err) {
+			if (this.targetExists(target)) {
+				console.error("Image Paste on GitHub source note read failed:", err);
+				new Notice("Could not read the original note. The operation was stopped.");
+			}
+			return false;
+		}
 		if (!this.targetExists(target)) return false;
 		return (this.sourceEditor(target)?.getValue() ?? content).includes(placeholder);
 	}
@@ -285,9 +397,10 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		return true;
 	}
 
-	private async uploadToGithub(image: File): Promise<string> {
+	private async uploadToGithub(image: File, canUpload?: () => Promise<boolean>): Promise<string> {
 		const { owner, repo, branch, uploadPath, githubToken } = this.settings;
 		const ext = imageExtension(image.type);
+		if (!this.active) throw UPLOAD_CANCELLED;
 
 		const buffer = await image.arrayBuffer();
 		const base64 = arrayBufferToBase64(buffer);
@@ -306,6 +419,9 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		const repository = `${encodePathSegment(owner)}/${encodePathSegment(repo)}`;
 
 		const apiUrl = `https://api.github.com/repos/${repository}/contents/${encodedPath}`;
+		if (!this.active || (canUpload && !(await canUpload())) || !this.active) {
+			throw UPLOAD_CANCELLED;
+		}
 
 		const response = await requestUrl({
 			url: apiUrl,
@@ -475,7 +591,7 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Save locally on failure")
 			.setDesc(
-				"If an upload fails, save the image into your vault instead of discarding it."
+				"If an upload fails, save the image into your vault. If HEIC conversion fails, preserve the original as a file link."
 			)
 			.addToggle((toggle) =>
 				toggle

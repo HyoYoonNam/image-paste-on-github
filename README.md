@@ -54,22 +54,49 @@ and once the upload finishes it is replaced with `![](https://raw.githubusercont
 If config is missing, Obsidian's default local-save behavior is left untouched.
 Mixed attachments (such as an image and a PDF) use Obsidian's default handling.
 Canvas and editors outside an open Markdown note view also use the default handling.
-Pending uploads stay tied to the original note when you switch tabs or rename the note. Removing the upload
-placeholder cancels insertion; an image already uploaded to GitHub is not deleted.
+Pending uploads stay tied to the original note when you switch tabs or rename the
+note. Removing the upload placeholder cancels insertion and prevents uploads that
+have not started. A conversion already running may finish, and an image already
+uploaded to GitHub is not deleted.
 
-Supported MIME types are `image/png`, `image/jpeg`, `image/gif`, `image/webp`,
-`image/svg+xml`, `image/bmp`, and `image/avif`. If any attachment has an unsupported
-or empty MIME type, including HEIC images, the entire paste or drop uses Obsidian's
-default handling. The plugin checks the MIME string supplied by the file; it does
-not inspect or convert the image bytes, or infer the format from the filename.
+Files with MIME types `image/png`, `image/jpeg`, `image/gif`, `image/webp`,
+`image/svg+xml`, `image/bmp`, and `image/avif` are uploaded without conversion.
+These formats are selected by the file's MIME string, not by inspecting its bytes.
+
+HEIC and HEIF files (`image/heic`, `image/heif`) are converted locally to JPEG before
+uploading. A file with an empty MIME type is also accepted if its name ends in
+`.heic` or `.heif`, ignoring case. Other unknown MIME types are not inferred from
+filenames. If any attachment is unsupported, the entire paste or drop uses
+Obsidian's default handling.
+
+HEIC conversion uses the bundled decoder, without an external conversion service.
+It converts one primary image (or the first image) at JPEG quality 0.9, without
+preserving the original metadata or additional images. HEIC conversions run one
+at a time. If the JPEG upload fails, **Save locally on failure** saves the converted
+JPEG. If conversion itself fails, that setting preserves the original HEIC or HEIF
+as a normal file link and shows a notice. With the setting off, no file is saved or
+uploaded on conversion failure. Export the original as JPEG and try again.
 
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev    # watch build
 npm run build  # type-check + production bundle
+npm test       # mocked plugin and API regression tests
+npm run test:browser  # real HEIC conversion using the production bundle
 ```
+
+Development requires Node.js 20 or later. The browser test uses installed Google
+Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium
+executable if needed. It uses the synthetic fixture documented in
+[`tests/fixtures/SOURCE.txt`](tests/fixtures/SOURCE.txt), blocks external network
+requests, and replaces the GitHub API with a stub. No token is needed.
+
+The converter dependency is pinned in `package.json` and `package-lock.json`.
+To replace it, update that dependency and its lockfile, or the adapter in
+`src/heic.ts`, then run `npm ci` and `npm run build`. Pinned upstream source and decoder build instructions
+are listed in [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).
 
 Copy `main.js`, `manifest.json`, and `styles.css` into
 `<vault>/.obsidian/plugins/image-paste-on-github/` to test.
@@ -91,4 +118,8 @@ touch the rest of your GitHub account.
 
 ## License
 
-MIT
+The plugin's own code is MIT licensed. HEIC conversion bundles `heic-to` 1.6.7,
+`libheif` 1.23.7, and `libde265` 1.0.16 under LGPL version 3 or later. Their source
+links, attribution, and full license texts are in
+[`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) and are also included in the generated
+`main.js` so they remain available in the installed plugin.

@@ -1,0 +1,17 @@
+pattern.heic and pattern.png are synthetic test images created for this repository.
+No external photograph or personal image was used. They and generate-pattern.py
+are provided under the repository's MIT License.
+
+The image is 64 by 48 pixels. Its four solid-color quadrants are RGB (240, 20, 30),
+(20, 220, 40), (30, 40, 230), and (240, 240, 240).
+
+Generation:
+  python3 tests/fixtures/generate-pattern.py
+  sips -s format heic tests/fixtures/pattern.png --out tests/fixtures/pattern.heic
+
+sips is only used to produce the checked-in fixture. The plugin and automated
+tests do not use sips, a native HEIC decoder, or an external conversion service.
+The browser test converts this HEIC fixture with the bundled heic-to decoder.
+
+pattern.heic SHA-256:
+13adf972f1a5da2aa735b09db64dc2cbefa9c1af6b13d99f8cca9752b3bef87e

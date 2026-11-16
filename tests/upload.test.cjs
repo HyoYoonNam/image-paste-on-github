@@ -37,6 +37,7 @@ async function fixture(settings = {}) {
 	const sandbox = {
 		module: { exports: {} },
 		require(name) {
+			if (name === "./heic") return { convertHeicToJpeg() { throw new Error("Unexpected conversion"); } };
 			assert.equal(name, "obsidian");
 			return obsidian;
 		},
@@ -165,4 +166,17 @@ test("미지원 MIME의 직접 업로드는 바이트 읽기와 요청 전에 �
 		assert.equal(reads, 0, type);
 		assert.equal(f.requests.length, 0, type);
 	}
+});
+
+test("바이트를 읽는 동안 플러그인이 종료되면 GitHub 요청을 보내지 않는다", async () => {
+	const f = await fixture(); let finishReading;
+	const upload = f.plugin.uploadToGithub({ type: "image/jpeg", arrayBuffer: () => new Promise(resolve => { finishReading = resolve; }) });
+	f.plugin.onunload(); finishReading(new Uint8Array([255, 216, 255, 217]).buffer);
+	await assert.rejects(upload, () => true); assert.equal(f.requests.length, 0);
+});
+
+test("요청 직전 원본 placeholder가 취소되면 GitHub 요청을 보내지 않는다", async () => {
+	const f = await fixture();
+	await assert.rejects(f.plugin.uploadToGithub(image("image/jpeg"), async () => false), () => true);
+	assert.equal(f.requests.length, 0);
 });
