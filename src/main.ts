@@ -88,10 +88,9 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 	): boolean {
 		if (!fileList || fileList.length === 0) return false;
 
-		const images = Array.from(fileList).filter((f) =>
-			f.type.startsWith("image/")
-		);
-		if (images.length === 0) return false;
+		const images = Array.from(fileList);
+		// 이벤트 전체를 가로채므로 다른 종류의 첨부가 섞이면 기본 처리에 맡긴다.
+		if (!images.every((file) => file.type.startsWith("image/"))) return false;
 
 		// Missing config: let Obsidian's default handler save locally.
 		if (!this.isConfigured()) {
