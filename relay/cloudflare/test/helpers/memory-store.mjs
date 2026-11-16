@@ -38,12 +38,11 @@ export function storedRecord(input) {
     codeChallenge: input.codeChallenge,
     clientState: input.clientState,
     expiresAt: input.expiresAt,
-    expireAt: new Date(input.expiresAt),
     status: 'pending',
   };
 }
 
-/** Local development store. Methods transition synchronously before returning their promises. */
+/** Worker 단위 테스트에서 지연과 장애를 주입하는 메모리 저장소다. 운영에서는 D1을 사용한다. */
 export class MemoryTransactionStore {
   constructor({ maxTransactions = 1000, now = Date.now } = {}) {
     this.maxTransactions = maxTransactions;
@@ -107,21 +106,4 @@ export class MemoryTransactionStore {
     this.transactions.clear();
     this.states.clear();
   }
-}
-
-export async function createStoreFromEnvironment(environment = process.env, { now = Date.now } = {}) {
-  const kind = environment.SESSION_STORE ?? 'memory';
-  if (!['memory', 'firestore'].includes(kind) || (environment.K_SERVICE && kind !== 'firestore')) {
-    throw new Error('Cloud Run requires SESSION_STORE=firestore.');
-  }
-  if (kind === 'memory') return new MemoryTransactionStore({ now });
-  if (environment.K_SERVICE && environment.FIRESTORE_EMULATOR_HOST) throw new Error('An emulator is not allowed in Cloud Run.');
-  const [{ Firestore }, { FirestoreTransactionStore }] = await Promise.all([
-    import('@google-cloud/firestore'), import('./firestore-store.mjs'),
-  ]);
-  const firestore = new Firestore({
-    ...(environment.FIRESTORE_PROJECT_ID ? { projectId: environment.FIRESTORE_PROJECT_ID } : {}),
-    databaseId: environment.FIRESTORE_DATABASE_ID || '(default)',
-  });
-  return new FirestoreTransactionStore({ firestore, collectionPrefix: environment.FIRESTORE_COLLECTION_PREFIX || 'image_paste_auth', now });
 }

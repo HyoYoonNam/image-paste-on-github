@@ -29,7 +29,7 @@ Existing PAT users keep their current authentication mode and token after upgrad
 
 The plugin uses GitHub App browser authorization with PKCE S256. The relay keeps the App client secret on the server, checks short-lived, single-use login transactions, and exchanges authorization codes and refresh tokens with GitHub. The browser-to-Obsidian link contains only random transaction and state values, never credentials or your vault name. **Images are uploaded directly to GitHub**, without passing through the relay.
 
-Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation. D1 or Firestore temporarily stores pending-login metadata and authorization codes; access tokens, refresh tokens, and PKCE verifiers are never persisted on the relay. Logins expire after ten minutes, independently of delayed cleanup. D1's automatic Time Travel can retain prior database states for up to seven days on Free, so deleting a row does not immediately erase recovery copies. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
+Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation. D1 temporarily stores pending-login metadata and authorization codes; access tokens, refresh tokens, and PKCE verifiers are never persisted on the relay. Logins expire after ten minutes, independently of delayed cleanup. D1's automatic Time Travel can retain prior database states for up to seven days on Free, so deleting a row does not immediately erase recovery copies. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
 
 Access tokens renew automatically when needed, with one refresh request shared by concurrent uploads. The new access and refresh tokens are saved together. Expired authorization, an uncertain refresh result, or lost credentials requires reconnecting; the plugin never silently switches to your saved PAT.
 
@@ -94,27 +94,26 @@ Pending uploads stay tied to the original note when you switch tabs or rename it
 <details>
 <summary>Development and license</summary>
 
-Plugin development requires Node.js 20 or later. The Node relay requires Node.js 22 or later; the Cloudflare tooling requires Node.js 22.12 or later.
+Plugin development requires Node.js 20 or later. Relay development and the full test suite require Node.js 22.12 or later for the Cloudflare tooling.
 
-The Cloudflare relay uses Workers Web APIs and D1 atomic SQL batches to share pending logins and prevent repeated code exchange. Its tests run in the actual local workerd runtime with a D1 database. Keep its account on Free: requests fail at its limits instead of switching to paid usage. The Node relay retains memory storage for local development and Firestore for self-hosting; the optional GCP setup requires billing. See [Cloudflare setup](relay/cloudflare/README.md), [Node relay setup](relay/README.md), and the [authentication design](docs/auth-design.md). The App client secret stays on the server, and images continue to upload directly to GitHub.
+The relay uses Cloudflare Workers and D1 in production and local development. Atomic SQL batches share pending logins and prevent repeated code exchange; tests run in the actual local workerd runtime with a D1 database. Keep its account on Free: requests fail at its limits instead of switching to paid usage. See [Cloudflare setup](relay/cloudflare/README.md) and the [authentication design](docs/auth-design.md). The App client secret stays on the Worker, and images upload directly to GitHub.
 
 For a self-hosted build, set `IMAGE_PASTE_AUTH_RELAY_URL` before building. An explicitly empty value disables the default relay. Tests cover the production bundle's default, overrides, and preservation of existing settings without contacting the hosted service.
 
 ```bash
 npm ci
-npm ci --prefix relay # relay dependencies, installed separately from the plugin
 npm ci --prefix relay/cloudflare # Cloudflare development and testing tools
 npm run dev           # watch build
 npm run build         # type-check and production bundle
 npm test              # mocked plugin and API regression tests
-npm run test:relay    # local HTTP relay with a mocked GitHub upstream
-npm run test:cloudflare # Workers API, D1, runtime integration, and configuration tests
+npm run test:cloudflare # Workers API, D1, plugin-client integration, and configuration tests
+npm run test:relay      # alias for test:cloudflare
 npm run test:browser  # production-bundle settings UI and real HEIC conversion
 ```
 
-Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The [Firestore emulator tests](relay/README.md#verification) additionally check independent servers, atomic code consumption, expiry, and uncertain commits. They must be run separately with an emulator; the ordinary relay suite skips them when no emulator is configured. The browser tests cover the settings UI and real HEIC conversion. Automated tests mock GitHub; the hosted relay has also been checked with a real App login, desktop callback, and sample upload in Obsidian 1.12.7 on macOS. Mobile callback return still needs live validation.
+Plugin tests cover PKCE, cancellation, credential storage, token rotation, and repository discovery. The Cloudflare suite checks atomic code consumption, expiry, uncertain commits, and SQL rollback in local workerd and D1. Its [client integration test](relay/cloudflare/test/auth-client.test.mjs) connects the plugin's `GitHubAuth` to that runtime for login, refresh, disconnect, cancellation, and denial. Automated GitHub requests are mocked, and no real credentials are needed.
 
-The [GCP configuration tests](relay/deploy/gcp/README.md#설정-테스트) validate deployment settings with a mocked Google provider; they do not create cloud resources or verify live IAM and logging policies.
+The browser tests cover the settings UI and real HEIC conversion. The hosted relay has also been checked with a real App login, desktop callback, and sample upload in Obsidian 1.12.7 on macOS. Mobile callback return still needs live validation.
 
 The browser tests use installed Google Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium executable if needed. The HEIC test uses the [synthetic fixture](tests/fixtures/SOURCE.txt). Browser tests block external requests and stub the GitHub API. No token is needed.
 

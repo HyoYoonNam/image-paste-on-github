@@ -1,6 +1,6 @@
-# Cloudflare Workers Free와 D1 Free 배포
+# Cloudflare Workers와 D1 relay
 
-GitHub App 인증을 Workers와 D1에서 처리한다. 이미지는 Obsidian에서 GitHub로 직접 전송하며 이 Worker를 통과하지 않는다. 기존 Node/Firestore relay와 같은 PKCE 계약을 사용한다.
+GitHub App 인증은 운영 환경과 로컬 개발 모두 Workers와 D1에서 처리한다. 이미지는 Obsidian에서 GitHub로 직접 전송하며 이 Worker를 통과하지 않는다. [인증 설계와 API 계약](../../docs/auth-design.md)에 PKCE 흐름, 요청과 응답, 오류 처리를 정리했다.
 
 계정은 **Workers Free**로 유지한다. 이 구성은 유료 플랜 전환, 카드 등록, 추가 유료 제품을 요구하지 않는다. 무료 한도를 넘으면 서비스가 실패할 수 있으므로 유료 전환으로 해결하지 않고 사용량부터 확인한다. `usage_model`은 지정하지 않는다. [Workers 요금](https://developers.cloudflare.com/workers/platform/pricing/), [D1 요금](https://developers.cloudflare.com/d1/platform/pricing/)
 
@@ -12,7 +12,7 @@ GitHub App 인증을 Workers와 D1에서 처리한다. 이미지는 Obsidian에�
 
 별도 검증 로그인으로 access token과 refresh token 교체, 갱신 후 저장소 조회 200, revoke 204, 폐기한 토큰의 GitHub 응답 401도 확인했다. 이 검증의 토큰은 메모리에서만 처리했다. 모바일 복귀와 장기 운영 부하는 아직 확인하지 않았다.
 
-## 로컬 검증
+## 로컬 개발과 검증
 
 Node.js 22.12 이상을 사용하고 이 디렉터리에서 실행한다.
 
@@ -21,9 +21,14 @@ npm ci
 npm test
 npm run migrate:local
 npm run build
+npm run dev
 ```
 
-Wrangler 4.162.0과 같은 workerd를 쓰는 Miniflare 5.20261113.0-beta를 정확한 버전으로 고정했다. 테스트는 실제 로컬 workerd와 D1을 사용하고 GitHub는 모의 응답으로 대체한다. `build`는 `wrangler deploy --dry-run`이므로 업로드하지 않는다. `migrate:local`은 로컬 데이터베이스에만 적용한다. [D1 로컬 개발](https://developers.cloudflare.com/d1/best-practices/local-development/)
+Wrangler 4.162.0과 같은 workerd를 쓰는 Miniflare 5.20261113.0-beta를 정확한 버전으로 고정했다. `dev`는 `wrangler dev --local`로 같은 Worker를 실행하고, `migrate:local`은 로컬 D1에만 적용한다. 기본 `AUTH_ENABLED=false`에서는 `/health`만 200을 반환하고 인증 요청은 503으로 끝난다. `build`는 `wrangler deploy --dry-run`이므로 업로드하지 않는다. [D1 로컬 개발](https://developers.cloudflare.com/d1/best-practices/local-development/)
+
+자동 테스트는 실제 로컬 workerd와 D1을 사용하고 GitHub 응답은 모의 처리한다. 별도 서버, 클라우드 계정, 실제 GitHub secret은 필요 없다. [플러그인 클라이언트 통합](test/auth-client.test.mjs)은 `GitHubAuth`를 이 런타임에 연결해 로그인, 갱신, 연결 해제, 취소와 거절을 확인한다. 저장소 테스트는 동시에 도착한 완료 요청, SQL rollback, 불확실한 commit, 만료와 namespace 분리를 검증한다.
+
+저장소 루트에서는 `npm ci`와 `npm ci --prefix relay/cloudflare`로 설치한 뒤 `npm run test:relay` 또는 `npm run test:cloudflare`를 실행한다. 두 명령은 같은 Cloudflare 테스트를 실행한다. 플러그인 단위 테스트는 `npm test`, production bundle의 UI와 HEIC 브라우저 검증은 `npm run test:browser`다.
 
 GitHub 요청은 고정 `User-Agent`를 포함하고 redirect를 따라가지 않는다. 런타임 테스트는 필수 헤더 누락으로 인한 연결 해제 실패와 redirect를 통한 자격 증명 전달을 확인한다. [GitHub REST 헤더](https://docs.github.com/en/rest/using-the-rest-api/getting-started-with-the-rest-api#user-agent)
 
@@ -58,11 +63,34 @@ npm run deploy
 
 `/health`가 200을 반환하고 `/auth/start`는 503을 반환하는지 확인한다. 로그 검증용 query를 붙인 `/health?log_probe=...`는 404가 정상이다. 실제 OAuth code나 token으로 로그 설정을 시험하지 않는다.
 
-기존 [GitHub App 등록 절차](../README.md#register-the-github-app)에 따라 App을 등록한다. 커뮤니티 사용자도 설치할 수 있도록 **Any account**를 선택하고, 권한은 Contents read and write만 부여한다. Callback URL은 `${PUBLIC_BASE_URL}/auth/callback`, 사용자 토큰 만료는 활성화, 설치 중 자동 OAuth와 Webhooks는 비활성화한다.
+GitHub App은 다음과 같이 등록한다.
+
+1. **Repository permissions → Contents: read and write**를 설정하고 Metadata는 read-only로 둔다. 다른 권한은 추가하지 않는다. 커뮤니티 사용자도 설치할 수 있도록 **Any account**를 선택한다.
+2. Callback URL을 `${PUBLIC_BASE_URL}/auth/callback`으로 지정한다. **Request user authorization (OAuth) during installation**은 끈다. 저장소 설치와 브라우저 승인은 별도 단계로 진행한다.
+3. 사용자 access token 만료를 활성화한다. Worker도 `offline_access`를 요청하고 만료 정보가 없는 토큰 응답을 거절한다. **Webhooks → Active**는 끄고 device flow는 사용하지 않는다.
+4. 숫자 App ID와 다른 **Client ID**, App 페이지 주소의 slug를 확인하고 client secret을 생성한다. 공개 설정과 secret을 아래 설명대로 분리해서 입력한다.
+5. App을 전용 공개 이미지 저장소에만 설치한 뒤 플러그인에서 로그인하고 저장소를 선택한다. 승인만으로 저장소 설치나 업로드 권한이 생기지는 않는다.
+
+Contents write는 선택한 저장소의 이미지 외 파일도 수정할 수 있다. 사용자 토큰 권한은 App 설치 권한과 사용자 자신의 권한을 모두 만족해야 한다. Worker는 저장소 생성이나 App 설치를 대신 수행하지 않는다. [GitHub App 등록](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app), [사용자 토큰과 PKCE](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app)
 
 Client ID와 App slug는 `wrangler.local.jsonc`의 공개 설정에 넣는다. 사용자가 Cloudflare Dashboard의 Worker 설정에서 암호화된 secret **`GITHUB_CLIENT_SECRET`**을 직접 입력한다. secret 값은 로컬 파일이나 저장소로 옮기지 않는다. 이후 배포에서도 secret binding이 유지되는지 이름만 확인한다.
 
 GitHub가 설치 전에 private key 생성을 요구하면 App 소유자가 생성해 안전하게 보관한다. 이 relay는 사용자 OAuth만 사용하므로 private key를 배포하거나 읽지 않는다.
+
+공개 설정과 바인딩은 다음과 같다.
+
+| 이름 | 용도 |
+| --- | --- |
+| `AUTH_ENABLED` | 문자열 `true`일 때만 인증을 제공한다. 등록과 secret 입력 전에는 `false`로 둔다. |
+| `PUBLIC_BASE_URL` | 경로, query, 사용자 정보가 없는 고정 HTTPS origin이다. |
+| `GITHUB_CLIENT_ID`, `GITHUB_APP_SLUG` | App의 공개 식별자다. |
+| `GITHUB_CLIENT_SECRET` | Dashboard에서 입력하는 암호화된 secret binding이다. |
+| `DB` | D1 데이터베이스 binding이다. |
+| `APP_NAMESPACE` | 같은 DB 안에서 App과 환경별 로그인 행을 구분한다. |
+| `ALLOWED_ORIGINS` | 선택 사항인 브라우저 origin 허용 목록이다. 쉼표로 구분하며 기본값은 비어 있다. |
+| `ALLOW_HTTP_LOOPBACK` | 로컬 개발에서만 `true`로 설정해 HTTP loopback origin을 허용할 수 있다. |
+
+Obsidian의 `requestUrl`은 브라우저 CORS 허용 없이 동작한다. Origin이 없는 요청은 처리하며, Origin이 있으면 허용 목록과 일치해야 한다. CORS는 인증을 대신하지 않으며 와일드카드는 사용하지 않는다.
 
 ## 3. 인증 활성화와 확인
 

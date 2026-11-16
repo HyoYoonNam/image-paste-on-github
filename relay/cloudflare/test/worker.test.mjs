@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { createWorker } from '../worker.mjs';
 import { StoreError } from '../d1-store.mjs';
-import { MemoryTransactionStore } from '../../transaction-store.mjs';
+import { MemoryTransactionStore } from './helpers/memory-store.mjs';
 
 const BASE = 'https://auth.example.test';
 const ENV = {
@@ -102,7 +102,7 @@ test('invalid configuration fails closed without reflecting environment values',
   }
 });
 
-test('PKCE flow, pending retry, callback HTML, one-time exchange and rotating token fields match the Node relay contract', async () => {
+test('PKCE flow, pending retry, callback HTML, one-time exchange and rotating token fields match the plugin API', async () => {
   const f = fixture({ fetch: () => Response.json({ ...PAIR, private_extra: 'not-forwarded' }) });
   const tx = await f.start();
   const authorization = new URL(tx.authorizationUrl);

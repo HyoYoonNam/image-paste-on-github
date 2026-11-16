@@ -1,4 +1,13 @@
 .env
 .env.*
-!.env.example
 node_modules/
+
+# Keep existing local infrastructure credentials and state out of Git.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
