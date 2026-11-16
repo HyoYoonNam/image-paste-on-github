@@ -4,6 +4,12 @@ Cloud Run, Firestore Native, Secret Manager, Artifact Registry를 Terraform으�
 
 이미지는 계속 플러그인에서 GitHub로 직접 업로드한다. Firestore에는 10분 동안 유효한 로그인 대기 상태와 authorization code를 임시 저장한다. 사용자 access token, refresh token, PKCE verifier는 저장하지 않는다. 자세한 저장 정책은 [relay README](../../README.md)를 참고한다.
 
+## 비용 조건
+
+이 구성은 과금 가능성이 없는 무료 배포용이 아니다. 이름 있는 Firestore 데이터베이스는 무료 할당량을 적용받지 않으며, TTL 삭제도 무료 사용 대상이 아니다. Cloud Run의 일반 Free Tier는 결제 계정이 필요하고 무료 한도 초과분은 과금된다. 인스턴스 수 제한만으로 비용이 0원임을 보장할 수 없다. [Firestore 요금](https://cloud.google.com/firestore/pricing?hl=en), [Google Cloud Free Tier](https://docs.cloud.google.com/free/docs/free-cloud-features)
+
+결제 계정 없이 한도에서 사용이 중단되는 Starter Tier는 별도 상품이다. 현재 또는 과거 유료 Cloud Billing 이력이 없는 개인 계정 등 자격 조건이 있으며, Google이 관리하는 프로젝트 하나를 사용한다. IAM, API, 서비스 설정이 제한되므로 이 Terraform을 그대로 적용하는 대상이 아니다. 과금 가능성을 허용하지 않는 경우 일반 결제 계정을 연결하거나 이 구성을 적용하지 않는다. [Starter Tier 조건과 제약](https://docs.cloud.google.com/docs/starter-tier)
+
 ## 준비
 
 - 결제가 연결된 기존 GCP 프로젝트, 해당 프로젝트의 리소스 생성과 IAM 변경 권한
@@ -68,7 +74,7 @@ terraform -chdir=relay/deploy/gcp apply
 RELAY_URL="$(terraform -chdir=relay/deploy/gcp output -raw public_base_url)"
 curl --fail --show-error \
   -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
-  "${RELAY_URL}/health?log_probe=image-paste-auth-check"
+  "${RELAY_URL}/health"
 ```
 
 `{"status":"ok"}`를 확인한다. 이 health 응답은 프로세스 실행만 확인하며 Firestore IAM이나 GitHub 인증 성공을 증명하지 않는다. `/auth/config`의 `callbackUrl`이 App 등록값과 일치하는지도 확인한다.
@@ -79,7 +85,15 @@ Cloud Run은 요청 URL의 query까지 포함한 request log를 자동 생성한
 
 제외 정책은 **로그 생성을 끄는 기능이 아니며, `_Default` 밖의 sink에는 적용되지 않는다.** 프로젝트의 custom sink와 조직, 폴더의 aggregated sink도 확인하고, 같은 서비스 요청 로그를 각 경로에서 제외해야 한다. 프록시나 오류 추적 도구가 있다면 URL query, Authorization 헤더, 요청과 응답 본문도 수집하지 않도록 설정한다. [로그 라우팅 구조](https://docs.cloud.google.com/logging/docs/routing/overview)
 
-설정 전파와 로그 수집 지연을 고려해 위 marker 요청을 반복하고, 각 로그 저장소와 외부 전송 대상에서 `image-paste-auth-check`가 보관되지 않는지 확인한다. 단순히 Logs Explorer 한 곳에서 검색 결과가 없다는 것만으로 모든 sink가 제외됐다고 판단하지 않는다. 이전에 저장된 로그는 제외 정책으로 소급 삭제되지 않는다. 이 확인 중에는 실제 OAuth code나 token을 보내지 않는다.
+비밀값이 없는 marker 요청을 별도로 보낸다. query가 붙은 health 경로는 의도적으로 `404`를 반환하므로 이 요청에는 `--fail`을 붙이지 않는다.
+
+```sh
+curl --show-error -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  "${RELAY_URL}/health?log_probe=image-paste-auth-check"
+```
+
+설정 전파와 로그 수집 지연을 고려해 marker 요청을 반복하고, 각 로그 저장소와 외부 전송 대상에서 `image-paste-auth-check`가 보관되지 않는지 확인한다. 단순히 Logs Explorer 한 곳에서 검색 결과가 없다는 것만으로 모든 sink가 제외됐다고 판단하지 않는다. 이전에 저장된 로그는 제외 정책으로 소급 삭제되지 않는다. 이 확인 중에는 실제 OAuth code나 token을 보내지 않는다.
 
 ## 4. 공개하고 플러그인 연결
 

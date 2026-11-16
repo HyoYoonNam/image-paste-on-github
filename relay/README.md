@@ -6,7 +6,7 @@ The GitHub App client secret lives only in the server environment. The relay han
 
 ## Register the GitHub App
 
-1. Register a GitHub App with **Repository permissions → Contents: read and write**. Metadata is read-only. Keep other permissions disabled and install the App only on the intended public image repository.
+1. Register a GitHub App with **Repository permissions → Contents: read and write**. Metadata is read-only. Keep other permissions disabled. Select **Any account** if other community-plugin users should be able to install the App; each installation should grant access only to the intended public image repository.
 2. Set its callback URL to `https://YOUR-AUTH-DOMAIN/auth/callback`. Use the same origin as `PUBLIC_BASE_URL` below. Do not enable **Request user authorization (OAuth) during installation**; authorization starts separately through this relay.
 3. Keep expiring user access tokens enabled. The relay also requests `offline_access` and rejects non-expiring token responses. Disable **Webhooks → Active** because this service has no webhook receiver. No device flow or private key is used.
 4. Copy the **Client ID** (not the numeric App ID), generate a client secret, and note the App slug from `https://github.com/apps/YOUR-SLUG`. Store the secret in the deployment platform's secret store or an access-restricted environment file. Never put it in plugin settings or commit it.
