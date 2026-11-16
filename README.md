@@ -2,6 +2,8 @@
 
 Upload pasted or dropped images to your public GitHub repository and embed their URLs in Obsidian.
 
+**New in 1.2.0:** Connect with GitHub in your browser instead of creating and copying a PAT. OAuth tokens stay out of this plugin's `data.json`.
+
 ![Actual Obsidian recording: paste an image, upload it to GitHub, and display the remote image in the note without a local attachment](docs/images/obsidian-paste-demo.gif)
 
 *Recorded in Obsidian.* [View the final frame](docs/images/obsidian-paste-demo.png).
@@ -18,9 +20,7 @@ Install and enable Image Paste on GitHub from [Obsidian's community plugins](htt
 2. Select **Connect with GitHub**, approve the browser login, then select **Return to Obsidian**. No PAT needs to be copied. If Obsidian opens another vault, return to the original vault and select **Complete sign in**.
 3. Choose the **Image repository**, check **Branch** and **Upload path**, then paste or drop an image into a Markdown note. Selecting a repository fills in its default branch.
 
-> **Release status:** Browser login is ready in source builds for the next plugin release. The published **1.1.0** release still uses PAT authentication.
-
-New source builds use the plugin maintainer's [hosted authentication relay](https://image-paste-auth.dev-rudevico.workers.dev/health) by default; users do not need to deploy a server or copy a PAT. It runs on **Cloudflare Workers Free and D1 Free**. Free-plan limits can temporarily interrupt sign-in or token renewal.
+New installations of **1.2.0** use the plugin maintainer's [hosted authentication relay](https://image-paste-auth.dev-rudevico.workers.dev/health) by default; users do not need to deploy a server. It runs on **Cloudflare Workers Free and D1 Free**. Free-plan limits can temporarily interrupt sign-in or token renewal.
 
 Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**. Saved custom or empty relay addresses are also preserved. If an earlier source build saved an empty address, set **Authentication relay** to `https://image-paste-auth.dev-rudevico.workers.dev` to enable browser login.
 
@@ -57,7 +57,7 @@ The screenshot below is a reference for repository selection and **Contents: rea
 
 ![Token setup reference showing repository selection and Contents permissions](docs/images/token-setup.png)
 
-PATs are stored unencrypted in this vault's plugin `data.json`, including an existing PAT retained after switching to browser login. Do not sync, commit, or share that file. Revoke an exposed token on GitHub, and clear an unused saved PAT in Advanced settings.
+PATs are stored unencrypted in this vault's plugin `data.json`, including an existing PAT retained after switching to browser login. Do not sync, commit, or share that file. If you stop using a PAT, clear it in Advanced settings and revoke it on GitHub. Revoke and replace any exposed token.
 
 </details>
 
