@@ -1,10 +1,13 @@
 import {
 	App,
 	Editor,
+	MarkdownFileInfo,
+	MarkdownView,
 	Notice,
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	TFile,
 	arrayBufferToBase64,
 	normalizePath,
 	requestUrl,
@@ -30,6 +33,11 @@ interface ImagePasteSettings {
 	branch: string;
 	uploadPath: string;
 	fallbackToLocal: boolean;
+}
+
+interface UploadTarget {
+	file: TFile;
+	editor: Editor;
 }
 
 const DEFAULT_SETTINGS: ImagePasteSettings = {
@@ -58,18 +66,18 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		await this.loadSettings();
 
 		this.registerEvent(
-			this.app.workspace.on("editor-paste", (evt, editor) => {
+			this.app.workspace.on("editor-paste", (evt, editor, info) => {
 				if (evt.defaultPrevented) return;
-				if (this.handleImages(editor, evt.clipboardData?.files)) {
+				if (this.handleImages(editor, info, evt.clipboardData?.files)) {
 					evt.preventDefault();
 				}
 			})
 		);
 
 		this.registerEvent(
-			this.app.workspace.on("editor-drop", (evt, editor) => {
+			this.app.workspace.on("editor-drop", (evt, editor, info) => {
 				if (evt.defaultPrevented) return;
-				if (this.handleImages(editor, evt.dataTransfer?.files)) {
+				if (this.handleImages(editor, info, evt.dataTransfer?.files)) {
 					evt.preventDefault();
 				}
 			})
@@ -84,6 +92,7 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 	// evt.preventDefault() and suppress the default local-save behaviour.
 	private handleImages(
 		editor: Editor,
+		info: MarkdownFileInfo,
 		fileList: FileList | null | undefined
 	): boolean {
 		if (!fileList || fileList.length === 0) return false;
@@ -91,6 +100,10 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		const images = Array.from(fileList);
 		// 이벤트 전체를 가로채므로 다른 종류의 첨부가 섞이면 기본 처리에 맡긴다.
 		if (!images.every((file) => file.type.startsWith("image/"))) return false;
+		const file = info.file;
+		if (!file || file.extension.toLowerCase() !== "md") return false;
+		const target: UploadTarget = { file, editor };
+		if (this.sourceEditor(target) !== editor) return false;
 
 		// Missing config: let Obsidian's default handler save locally.
 		if (!this.isConfigured()) {
@@ -101,85 +114,163 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		}
 
 		for (const image of images) {
-			void this.uploadAndInsert(editor, image);
+			void this.uploadAndInsert(target, image);
 		}
 		return true;
 	}
 
-	private async uploadAndInsert(editor: Editor, image: File) {
+	private async uploadAndInsert(target: UploadTarget, image: File) {
 		const token = `image-paste-uploading-${Date.now()}-${Math.random()
 			.toString(36)
 			.slice(2, 8)}`;
 		const placeholder = `![${token}]()`;
 
-		editor.replaceSelection(placeholder + "\n");
+		target.editor.replaceSelection(placeholder + "\n");
 
+		let url: string;
 		try {
-			const url = await this.uploadToGithub(image);
-			this.replaceToken(editor, placeholder, `![](${url})`);
+			url = await this.uploadToGithub(image);
 		} catch (err) {
-			console.error("Image Paste on GitHub upload failed:", err);
-			const message =
-				err instanceof Error ? err.message : "Unknown error";
+			await this.handleUploadFailure(target, image, placeholder, err);
+			return;
+		}
 
-			if (this.settings.fallbackToLocal) {
-				try {
-					await this.saveLocally(editor, image, placeholder);
-					new Notice(
-						`Image upload failed (${message}); saved to the vault instead.`
-					);
-					return;
-				} catch (saveErr) {
-					console.error(
-						"Image Paste on GitHub local fallback failed:",
-						saveErr
-					);
-				}
-			}
-
-			// No fallback, or the fallback also failed: drop the placeholder.
-			this.replaceToken(editor, placeholder, "");
-			new Notice(`Image upload failed: ${message}`);
+		// 업로드가 끝난 뒤 노트 수정에 실패해도 로컬 복사본을 추가로 만들지 않는다.
+		try {
+			await this.replaceToken(target, placeholder, `![](${url})`);
+		} catch (err) {
+			if (!this.targetExists(target)) return;
+			console.error("Image Paste on GitHub note update failed:", err);
+			new Notice(`Image uploaded, but the original note could not be updated: ${url}`);
 		}
 	}
 
-	// Saves the image into the vault and replaces the placeholder with a normal
-	// embed, so a failed upload never loses the pasted image.
-	private async saveLocally(editor: Editor, image: File, placeholder: string) {
+	private async handleUploadFailure(
+		target: UploadTarget,
+		image: File,
+		placeholder: string,
+		err: unknown
+	) {
+		if (!this.targetExists(target)) return;
+		console.error("Image Paste on GitHub upload failed:", err);
+		const message = err instanceof Error ? err.message : "Unknown error";
+
+		if (this.settings.fallbackToLocal) {
+			let file: TFile | null = null;
+			try {
+				file = await this.saveLocally(target, image, placeholder);
+				if (!file) return;
+			} catch (saveErr) {
+				console.error("Image Paste on GitHub local fallback failed:", saveErr);
+			}
+
+			if (file) {
+				try {
+					const savedFile = file;
+					if (await this.replaceToken(target, placeholder, () => {
+						const link = this.app.fileManager.generateMarkdownLink(savedFile, target.file.path);
+						return link.startsWith("!") ? link : `!${link}`;
+					})) {
+						new Notice(`Image upload failed (${message}); saved to the vault instead.`);
+					}
+				} catch (updateErr) {
+					if (!this.targetExists(target)) return;
+					console.error("Image Paste on GitHub note update failed:", updateErr);
+					new Notice(`Image saved to ${file.path}, but the original note could not be updated.`);
+				}
+				return;
+			}
+		}
+
+		try {
+			if (await this.replaceToken(target, placeholder, "")) {
+				new Notice(`Image upload failed: ${message}`);
+			}
+		} catch (updateErr) {
+			if (!this.targetExists(target)) return;
+			console.error("Image Paste on GitHub note update failed:", updateErr);
+			new Notice(`Image upload failed: ${message}. The original note could not be updated.`);
+		}
+	}
+
+	private async saveLocally(target: UploadTarget, image: File, placeholder: string): Promise<TFile | null> {
+		if (!(await this.hasPlaceholder(target, placeholder))) return null;
 		const ext = MIME_EXTENSIONS[image.type] ?? "png";
 		const filename = `pasted-${Date.now()}-${Math.random()
 			.toString(36)
 			.slice(2, 8)}.${ext}`;
-		const sourcePath = this.app.workspace.getActiveFile()?.path ?? "";
+		const buffer = await image.arrayBuffer();
 		const targetPath =
 			await this.app.fileManager.getAvailablePathForAttachment(
 				filename,
-				sourcePath
+				target.file.path
 			);
-		const buffer = await image.arrayBuffer();
-		const file = await this.app.vault.createBinary(targetPath, buffer);
-		const link = this.app.fileManager.generateMarkdownLink(file, sourcePath);
-		this.replaceToken(
-			editor,
-			placeholder,
-			link.startsWith("!") ? link : `!${link}`
-		);
+		if (!(await this.hasPlaceholder(target, placeholder))) return null;
+		return this.app.vault.createBinary(targetPath, buffer);
 	}
 
-	private replaceToken(editor: Editor, from: string, to: string) {
+	private targetExists(target: UploadTarget): boolean {
+		return this.app.vault.getAbstractFileByPath(target.file.path) === target.file;
+	}
+
+	private sourceEditor(target: UploadTarget): Editor | undefined {
+		const views = this.app.workspace.getLeavesOfType("markdown")
+			.map((leaf) => leaf.view)
+			.filter((view): view is MarkdownView =>
+				view instanceof MarkdownView && view.file === target.file
+			);
+		const original = views.find((view) => view.editor === target.editor);
+		return (original ?? views[0])?.editor;
+	}
+
+	private async hasPlaceholder(target: UploadTarget, placeholder: string): Promise<boolean> {
+		if (!this.targetExists(target)) return false;
+		const editor = this.sourceEditor(target);
+		if (editor) return editor.getValue().includes(placeholder);
+		const content = await this.app.vault.read(target.file);
+		if (!this.targetExists(target)) return false;
+		return (this.sourceEditor(target)?.getValue() ?? content).includes(placeholder);
+	}
+
+	private async replaceToken(target: UploadTarget, from: string, to: string | (() => string)): Promise<boolean> {
+		const editorOpened = Symbol("editor-opened");
+		const cancelled = Symbol("cancelled");
+		while (this.targetExists(target)) {
+			const editor = this.sourceEditor(target);
+			if (editor) return this.replaceEditorToken(editor, from, to);
+
+			try {
+				await this.app.vault.process(target.file, (content) => {
+					// 반환하면 파일에 쓰므로 취소와 편집기 재열기는 예외로 쓰기 전에 중단한다.
+					if (!this.targetExists(target)) throw cancelled;
+					if (this.sourceEditor(target)) throw editorOpened;
+					if (!content.includes(from)) throw cancelled;
+					return content.replace(from, () => typeof to === "function" ? to() : to);
+				});
+				return true;
+			} catch (err) {
+				if (err === cancelled) return false;
+				if (err !== editorOpened) throw err;
+			}
+		}
+		return false;
+	}
+
+	private replaceEditorToken(editor: Editor, from: string, to: string | (() => string)): boolean {
 		const content = editor.getValue();
 		const idx = content.indexOf(from);
-		if (idx === -1) return;
+		if (idx === -1) return false;
 
 		const before = content.slice(0, idx);
 		const lines = before.split("\n");
 		const line = lines.length - 1;
 		const ch = lines[lines.length - 1].length;
 		editor.replaceRange(
-			to,
+			typeof to === "function" ? to() : to,
 			{ line, ch },
 			{ line, ch: ch + from.length }
 		);
+		return true;
 	}
 
 	private async uploadToGithub(image: File): Promise<string> {

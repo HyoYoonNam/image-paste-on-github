@@ -48,6 +48,9 @@ Paste or drag an image into any note. A `![uploading...]()` placeholder appears,
 and once the upload finishes it is replaced with `![](https://raw.githubusercontent.com/...)`.
 If config is missing, Obsidian's default local-save behavior is left untouched.
 Mixed attachments (such as an image and a PDF) use Obsidian's default handling.
+Canvas and editors outside an open Markdown note view also use the default handling.
+Pending uploads stay tied to the original note when you switch tabs or rename the note. Removing the upload
+placeholder cancels insertion; an image already uploaded to GitHub is not deleted.
 
 ## Development
 
