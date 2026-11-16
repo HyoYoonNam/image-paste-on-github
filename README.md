@@ -68,11 +68,14 @@ The plugin sends the token to GitHub in the `Authorization` header and does not 
 
 Development requires Node.js 20 or later.
 
+The optional GitHub App authentication relay has no runtime dependencies. See [relay setup and deployment](relay/README.md) and the [authentication design](docs/auth-design.md). Its client secret stays on the server, and images continue to upload directly to GitHub. A real GitHub App and HTTPS deployment must be configured separately.
+
 ```bash
 npm ci
 npm run dev           # watch build
 npm run build         # type-check and production bundle
 npm test              # mocked plugin and API regression tests
+npm run test:relay    # local HTTP relay with a mocked GitHub upstream
 npm run test:browser  # real HEIC conversion using the production bundle
 ```
 
