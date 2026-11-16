@@ -57,6 +57,12 @@ Canvas and editors outside an open Markdown note view also use the default handl
 Pending uploads stay tied to the original note when you switch tabs or rename the note. Removing the upload
 placeholder cancels insertion; an image already uploaded to GitHub is not deleted.
 
+Supported MIME types are `image/png`, `image/jpeg`, `image/gif`, `image/webp`,
+`image/svg+xml`, `image/bmp`, and `image/avif`. If any attachment has an unsupported
+or empty MIME type, including HEIC images, the entire paste or drop uses Obsidian's
+default handling. The plugin checks the MIME string supplied by the file; it does
+not inspect or convert the image bytes, or infer the format from the filename.
+
 ## Development
 
 ```bash

@@ -48,9 +48,9 @@ async function fixture(settings = {}) {
 	return { plugin, requests, settingTab };
 }
 
-function image() {
+function image(type = "image/png") {
 	return {
-		type: "image/png",
+		type,
 		arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
 	};
 }
@@ -130,4 +130,39 @@ test("연결 테스트도 owner와 repo를 각각 URL 구간으로 인코딩한�
 	assert.equal(f.requests.length, 1);
 	assert.equal(f.requests[0].method, "GET");
 	assert.equal(f.requests[0].url, "https://api.github.com/repos/owner%2F%23%3F/repo%25%20%28draft%29");
+});
+
+for (const [type, extension] of [
+	["image/png", "png"],
+	["image/jpeg", "jpg"],
+	["image/gif", "gif"],
+	["image/webp", "webp"],
+	["image/svg+xml", "svg"],
+	["image/bmp", "bmp"],
+	["image/avif", "avif"],
+]) {
+	test(`${type} 업로드는 .${extension} 확장자와 원본 바이트를 사용한다`, async () => {
+		const f = await fixture();
+		const raw = new URL(await f.plugin.uploadToGithub(image(type)));
+		assert.equal(f.requests.length, 1);
+		assert.ok(new URL(f.requests[0].url).pathname.endsWith(`.${extension}`));
+		assert.ok(raw.pathname.endsWith(`.${extension}`));
+		assert.equal(JSON.parse(f.requests[0].body).content, "AQID");
+	});
+}
+
+test("미지원 MIME의 직접 업로드는 바이트 읽기와 요청 전에 거절한다", async () => {
+	for (const type of ["image/heic", "image/jpg", "", "constructor", "toString"]) {
+		const f = await fixture();
+		let reads = 0;
+		await assert.rejects(
+			f.plugin.uploadToGithub({
+				type,
+				arrayBuffer: async () => { reads++; return new Uint8Array([1]).buffer; },
+			}),
+			/Unsupported image type/
+		);
+		assert.equal(reads, 0, type);
+		assert.equal(f.requests.length, 0, type);
+	}
 });

@@ -35,6 +35,7 @@ async function fixture() {
 	const events = new Map(), files = new Map(), contents = new Map();
 	const notices = [], jobs = [], uploads = [], localFiles = [], attachmentSources = [], linkSources = [];
 	const processCalls = [], processWrites = [], leaves = [];
+	const localWrites = [];
 	class MarkdownView {
 		constructor(file, editor) { this.file = file; this.editor = editor; }
 	}
@@ -84,7 +85,8 @@ async function fixture() {
 				const result = update(contents.get(files.get(file.path)));
 				processWrites.push(file.path); contents.set(files.get(file.path), result); return result;
 			},
-			async createBinary(filePath) {
+			async createBinary(filePath, buffer) {
+				localWrites.push({ filePath, bytes: [...new Uint8Array(buffer)] });
 				const file = addFile(filePath); localFiles.push(file); return file;
 			}
 		},
@@ -105,7 +107,7 @@ async function fixture() {
 		const event = { defaultPrevented: alreadyPrevented, clipboardData: { files: fileList }, dataTransfer: { files: fileList }, preventDefault() { this.defaultPrevented = true; } };
 		events.get(kind)(event, view.editor, view); return event;
 	}
-	return { plugin, state, files, contents, notices, jobs, uploads, localFiles, attachmentSources, linkSources, processCalls, processWrites, addFile, rename, open, close, switchTo, emit };
+	return { plugin, state, files, contents, notices, jobs, uploads, localFiles, localWrites, attachmentSources, linkSources, processCalls, processWrites, addFile, rename, open, close, switchTo, emit };
 }
 
 for (const kind of ["editor-paste", "editor-drop"]) {
@@ -254,4 +256,59 @@ test("닫힌 노트에서 placeholder가 지워졌으면 파일 쓰기를 수행
 	f.emit(view); f.close(view); f.contents.set(a, "취소된 본문");
 	f.uploads[0].resolve("https://example.com/image.png"); await f.jobs[0];
 	assert.equal(f.contents.get(a), "취소된 본문"); assert.equal(f.processWrites.length, 0); assert.equal(f.notices.length, 0);
+});
+
+for (const kind of ["editor-paste", "editor-drop"]) {
+	test(`${kind}: 미지원 MIME가 단독 또는 혼합되어 있으면 전체 기본 처리에 맡긴다`, async () => {
+		for (const type of ["image/heic", "image/jpg", "", "constructor", "toString"]) {
+			for (const attachments of [[image(type)], [image(), image(type)]]) {
+				const f = await fixture(), view = f.open(f.addFile("A/note.md", "원문"));
+				const event = f.emit(view, attachments, kind);
+				assert.equal(event.defaultPrevented, false, type);
+				assert.equal(view.editor.text, "원문", type);
+				assert.equal(f.uploads.length, 0, type);
+				assert.equal(f.localFiles.length, 0, type);
+			}
+		}
+	});
+}
+
+for (const [type, extension] of [
+	["image/png", "png"],
+	["image/jpeg", "jpg"],
+	["image/gif", "gif"],
+	["image/webp", "webp"],
+	["image/svg+xml", "svg"],
+	["image/bmp", "bmp"],
+	["image/avif", "avif"],
+]) {
+	test(`${type} 로컬 fallback은 .${extension} 확장자와 원본 바이트를 사용한다`, async () => {
+		const f = await fixture(), view = f.open(f.addFile("A/note.md", "본문\n"));
+		assert.equal(f.emit(view, [image(type)]).defaultPrevented, true);
+		f.uploads[0].reject(new Error("offline"));
+		await f.jobs[0];
+		assert.equal(f.localWrites.length, 1);
+		assert.ok(f.localWrites[0].filePath.endsWith(`.${extension}`));
+		assert.deepEqual(f.localWrites[0].bytes, [1, 2, 3]);
+		assert.ok(view.editor.text.includes(`.${extension}]]`));
+	});
+}
+
+test("미지원 MIME의 직접 로컬 저장은 바이트 읽기와 파일 생성 전에 거절한다", async () => {
+	for (const type of ["image/heic", "image/jpg", "", "constructor", "toString"]) {
+		const f = await fixture(), placeholder = "![image-paste-uploading-test]()";
+		const file = f.addFile("A/note.md", placeholder), view = f.open(file);
+		let reads = 0;
+		await assert.rejects(
+			f.plugin.saveLocally({ file, editor: view.editor }, {
+				type,
+				arrayBuffer: async () => { reads++; return new Uint8Array([1]).buffer; },
+			}, placeholder),
+			/Unsupported image type/
+		);
+		assert.equal(reads, 0, type);
+		assert.equal(f.attachmentSources.length, 0, type);
+		assert.equal(f.localWrites.length, 0, type);
+		assert.equal(view.editor.text, placeholder, type);
+	}
 });

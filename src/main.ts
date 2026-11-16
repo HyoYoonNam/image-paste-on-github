@@ -49,15 +49,21 @@ const DEFAULT_SETTINGS: ImagePasteSettings = {
 	fallbackToLocal: true,
 };
 
-const MIME_EXTENSIONS: Record<string, string> = {
-	"image/png": "png",
-	"image/jpeg": "jpg",
-	"image/gif": "gif",
-	"image/webp": "webp",
-	"image/svg+xml": "svg",
-	"image/bmp": "bmp",
-	"image/avif": "avif",
-};
+const MIME_EXTENSIONS = new Map<string, string>([
+	["image/png", "png"],
+	["image/jpeg", "jpg"],
+	["image/gif", "gif"],
+	["image/webp", "webp"],
+	["image/svg+xml", "svg"],
+	["image/bmp", "bmp"],
+	["image/avif", "avif"],
+]);
+
+function imageExtension(type: string): string {
+	const extension = MIME_EXTENSIONS.get(type);
+	if (!extension) throw new Error(`Unsupported image type: ${type || "unknown"}`);
+	return extension;
+}
 
 function encodePathSegment(value: string): string {
 	return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
@@ -104,8 +110,8 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		if (!fileList || fileList.length === 0) return false;
 
 		const images = Array.from(fileList);
-		// 이벤트 전체를 가로채므로 다른 종류의 첨부가 섞이면 기본 처리에 맡긴다.
-		if (!images.every((file) => file.type.startsWith("image/"))) return false;
+		// 이벤트 전체를 가로채므로 지원하지 않는 첨부가 섞이면 기본 처리에 맡긴다.
+		if (!images.every((file) => MIME_EXTENSIONS.has(file.type))) return false;
 		const file = info.file;
 		if (!file || file.extension.toLowerCase() !== "md") return false;
 		const target: UploadTarget = { file, editor };
@@ -200,8 +206,8 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 	}
 
 	private async saveLocally(target: UploadTarget, image: File, placeholder: string): Promise<TFile | null> {
+		const ext = imageExtension(image.type);
 		if (!(await this.hasPlaceholder(target, placeholder))) return null;
-		const ext = MIME_EXTENSIONS[image.type] ?? "png";
 		const filename = `pasted-${Date.now()}-${Math.random()
 			.toString(36)
 			.slice(2, 8)}.${ext}`;
@@ -281,11 +287,11 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 
 	private async uploadToGithub(image: File): Promise<string> {
 		const { owner, repo, branch, uploadPath, githubToken } = this.settings;
+		const ext = imageExtension(image.type);
 
 		const buffer = await image.arrayBuffer();
 		const base64 = arrayBufferToBase64(buffer);
 
-		const ext = MIME_EXTENSIONS[image.type] ?? "png";
 		const filename = `pasted-${Date.now()}-${Math.random()
 			.toString(36)
 			.slice(2, 8)}.${ext}`;
