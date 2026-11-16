@@ -3,12 +3,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
-const { transformSync } = require("esbuild");
+const { buildSync } = require("esbuild");
 
-const compiled = transformSync(
-	fs.readFileSync(path.join(__dirname, "../src/main.ts"), "utf8"),
-	{ loader: "ts", format: "cjs", target: "es2018" }
-).code;
+const compiled = buildSync({
+ entryPoints: [path.join(__dirname, "../src/main.ts")],
+ bundle: true, write: false, external: ["obsidian", "./heic"],
+ format: "cjs", target: "es2018"
+}).outputFiles[0].text;
 
 function deferred() {
 	let resolve, reject;
@@ -43,6 +44,8 @@ async function fixture() {
 	class Plugin {
 		async loadData() { return { githubToken: "fake", owner: "example", repo: "images" }; }
 		registerEvent() {}
+		registerObsidianProtocolHandler() {}
+		async saveData() {}
 		addSettingTab() {}
 	}
 	class PluginSettingTab {}

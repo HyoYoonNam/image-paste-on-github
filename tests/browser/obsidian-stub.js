@@ -27,6 +27,8 @@ globalThis.require = (name) => {
 		Plugin: class {
 			async loadData() { return { githubToken: "fake-test-token", owner: "example", repo: "images" }; }
 			registerEvent() {}
+			registerObsidianProtocolHandler() {}
+			async saveData() {}
 			addSettingTab() {}
 		},
 		PluginSettingTab: class {},

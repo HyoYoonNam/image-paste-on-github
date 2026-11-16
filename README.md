@@ -8,28 +8,63 @@ Upload pasted or dropped images to your public GitHub repository and embed their
 
 > **Public uploads:** The repository must be public, and every uploaded image is publicly accessible. Do not upload sensitive screenshots.
 >
-> **Token storage:** This plugin stores your token unencrypted in `data.json`. Do not sync, commit, or share that file.
+> **Credentials:** Browser login uses Obsidian Secret storage when available, or memory for the current session on older versions. PATs remain unencrypted in plugin `data.json`; do not sync, commit, or share that file.
 
 Install and enable Image Paste on GitHub from [Obsidian's community plugins](https://community.obsidian.md/plugins/image-paste-on-github).
 
 ## Quick start
 
-1. Create or choose a **public image repository**, then enter **Owner** and **Repository** in Settings → Image Paste on GitHub.
-2. Open **Create a token → Open GitHub**. On GitHub, select only that repository, grant **Contents: read and write**, set an **expiration date**, and paste the token into **GitHub token**.
-3. Check **Branch** (default `main`), use **Test connection** to check repository access, then paste or drop an image into a Markdown note.
+1. Create a **public image repository**. With a configured authentication relay, choose **GitHub App access → Choose repositories on GitHub** and install the App on **only that repository**, granting **Contents: read and write**.
+2. Select **Connect with GitHub**, approve the browser login, then select **Return to Obsidian**. No PAT needs to be copied. If Obsidian opens another vault, return to the original vault and select **Complete sign in**.
+3. Choose the **Image repository**, check **Branch** and **Upload path**, then paste or drop an image into a Markdown note. Selecting a repository fills in its default branch.
+
+> **Relay setup required:** This source tree does not include a hosted authentication service. Until an operator registers the GitHub App and deploys the relay, browser login is unavailable by default. Configure a trusted relay in **Advanced settings → Authentication relay**, or use the PAT option below. [Deployment guide](relay/README.md)
+
+Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**.
 
 <details>
-<summary>Repository and token setup</summary>
+<summary>Browser login, credentials, and disconnecting</summary>
 
-**Create repository** tries to create a public repository using your token. With no token or insufficient permission, it opens GitHub's new-repository page. If you create the repository on GitHub, enter its owner and name in the plugin settings.
+The plugin uses GitHub App browser authorization with PKCE S256. The relay keeps the App client secret on the server, checks short-lived, single-use login transactions, and exchanges authorization codes and refresh tokens with GitHub. The browser-to-Obsidian link contains only random transaction and state values, never credentials or your vault name. **Images are uploaded directly to GitHub**, without passing through the relay.
 
-**Create a token** opens GitHub's fine-grained token form. Choose the repository and permissions there. **Test connection** checks repository access, visibility, and the reported push permission. It does not upload a test file or check the selected branch.
+Only use a relay you trust. It handles authorization codes, PKCE proof, and access and refresh tokens during exchange, renewal, and revocation; it does not persist them. The plugin sends credentials only to the relay origin associated with that login. Disconnect and cancel any pending login before changing the relay. [Authentication design](docs/auth-design.md)
 
-**Branch** defaults to `main`; select a branch that exists in your repository. **Upload path** defaults to `assets`. Enter paths and branch names as-is, without URL encoding. Spaces, Unicode, `#`, `?`, parentheses, and literal `%` are encoded in URLs. Folder separators and valid branch names such as `feature/images` are supported.
+Access tokens renew automatically when needed, with one refresh request shared by concurrent uploads. The new access and refresh tokens are saved together. Expired authorization, an uncertain refresh result, or lost credentials requires reconnecting; the plugin never silently switches to your saved PAT.
+
+On **Obsidian 1.11.4 or later**, browser credentials use Obsidian Secret storage rather than this plugin's `data.json`. Secret storage is accessible to other plugins; it is not isolation from untrusted plugins. On older supported Obsidian versions, browser credentials stay in memory and you must reconnect after restarting or reloading the plugin. Pending browser sign-in lasts ten minutes and is not restored after a restart.
+
+**Disconnect** clears this device's stored browser credentials and attempts to revoke its access token. Network failures or an already expired token can prevent confirmation of remote revocation. Use **Advanced settings → Review GitHub authorizations** to revoke the App authorization on GitHub, or remove its repository installation. Disconnecting does not delete uploaded images or your saved PAT.
+
+Install the App on a dedicated image repository. Contents write permission covers other files in that repository as well as images. The repository picker includes accessible public, unarchived repositories whose installation has Contents write and whose user permission reports push access.
+
+</details>
+
+<details>
+<summary>Advanced: personal access token setup</summary>
+
+1. Open **Advanced settings → Authentication method → Personal access token**.
+2. Enter **Owner** and **Repository** for your public image repository.
+3. Use **Create a token → Open GitHub**. Select only that repository, grant **Contents: read and write**, choose an **expiration date**, then enter the token in **GitHub token**.
+4. Check **Branch**, then use **Test connection** and paste an image.
+
+Your saved PAT is preserved when you try browser login. Switching to PAT disconnects browser credentials; switching back requires connecting and selecting a repository again. Owner, repository, branch, and upload path describe the currently selected upload destination, so check them when switching methods.
+
+In PAT mode, **Create repository** tries to create a public repository with your token and opens GitHub if that fails. In browser-login mode, it opens GitHub; after creating the repository, grant the App access and refresh the repository list.
 
 The screenshot below is a reference for repository selection and **Contents: read and write**; Metadata remains read-only. Set an expiration date for your own token, even though the screenshot shows “No expiration.”
 
 ![Token setup reference showing repository selection and Contents permissions](docs/images/token-setup.png)
+
+PATs are stored unencrypted in this vault's plugin `data.json`, including an existing PAT retained after switching to browser login. Do not sync, commit, or share that file. Revoke an exposed token on GitHub, and clear an unused saved PAT in Advanced settings.
+
+</details>
+
+<details>
+<summary>Repository, branch, and path settings</summary>
+
+**Test connection** checks repository visibility and the reported push permission. It does not upload a test file, prove the token's Contents write permission, or check that the selected branch exists.
+
+**Branch** defaults to `main`; select an existing branch. Browser repository selection fills in that repository's default branch. **Upload path** defaults to `assets`. Enter paths and branch names as-is, without URL encoding. Spaces, Unicode, `#`, `?`, parentheses, and literal `%` are encoded in URLs. Folder separators and branch names such as `feature/images` are supported.
 
 </details>
 
@@ -55,15 +90,6 @@ Pending uploads stay tied to the original note when you switch tabs or rename it
 </details>
 
 <details>
-<summary>Security</summary>
-
-Use a fine-grained token limited to one dedicated image repository, with **Contents: read and write** and an expiration date. A leaked token can modify other content in that selected repository, not just images. Revoke and replace an exposed token.
-
-The plugin sends the token to GitHub in the `Authorization` header and does not put it in note links or URL query strings. Its stored copy remains plaintext in the vault's plugin `data.json`, so keep that file out of sync, commits, and shared backups.
-
-</details>
-
-<details>
 <summary>Development and license</summary>
 
 Development requires Node.js 20 or later.
@@ -76,10 +102,14 @@ npm run dev           # watch build
 npm run build         # type-check and production bundle
 npm test              # mocked plugin and API regression tests
 npm run test:relay    # local HTTP relay with a mocked GitHub upstream
-npm run test:browser  # real HEIC conversion using the production bundle
+npm run test:browser  # production-bundle settings UI and real HEIC conversion
 ```
 
-The browser test uses installed Google Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium executable if needed. It uses the [synthetic fixture](tests/fixtures/SOURCE.txt), blocks external requests, and stubs the GitHub API. No token is needed.
+Authentication tests cover PKCE, cancellation, credential storage, token rotation, repository discovery, and a real local HTTP relay with a mocked GitHub upstream. The browser tests cover the settings UI and real HEIC conversion. All GitHub authentication in automated tests is mocked; a production App, HTTPS deployment, and desktop/mobile callback return still need live validation.
+
+The browser tests use installed Google Chrome by default. Set `CHROME_EXECUTABLE_PATH` to another Chrome or Chromium executable if needed. The HEIC test uses the [synthetic fixture](tests/fixtures/SOURCE.txt). Browser tests block external requests and stub the GitHub API. No token is needed.
+
+To ship a default relay address, build with `IMAGE_PASTE_AUTH_RELAY_URL=https://YOUR-AUTH-DOMAIN npm run build`. This value is a public origin, never a client secret. Without it, the relay address is empty and browser sign-in stays disabled until configured. Keep server secrets in the relay deployment only.
 
 For manual testing, copy `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/image-paste-on-github/`.
 

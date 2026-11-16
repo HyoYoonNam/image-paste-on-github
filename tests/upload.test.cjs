@@ -3,12 +3,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { test } = require("node:test");
-const { transformSync } = require("esbuild");
+const { buildSync } = require("esbuild");
 
-const compiled = transformSync(
-	fs.readFileSync(path.join(__dirname, "../src/main.ts"), "utf8"),
-	{ loader: "ts", format: "cjs", target: "es2018" }
-).code;
+const compiled = buildSync({
+ entryPoints: [path.join(__dirname, "../src/main.ts")],
+ bundle: true, write: false, external: ["obsidian", "./heic"],
+ format: "cjs", target: "es2018"
+}).outputFiles[0].text;
 
 async function fixture(settings = {}) {
 	const requests = [];
@@ -18,6 +19,8 @@ async function fixture(settings = {}) {
 			return { githubToken: "fake", owner: "example", repo: "images", ...settings };
 		}
 		registerEvent() {}
+		registerObsidianProtocolHandler() {}
+		async saveData() {}
 		addSettingTab(tab) { settingTab = tab; }
 	}
 	class PluginSettingTab {}
@@ -178,5 +181,42 @@ test("바이트를 읽는 동안 플러그인이 종료되면 GitHub 요청을 �
 test("요청 직전 원본 placeholder가 취소되면 GitHub 요청을 보내지 않는다", async () => {
 	const f = await fixture();
 	await assert.rejects(f.plugin.uploadToGithub(image("image/jpeg"), async () => false), () => true);
+	assert.equal(f.requests.length, 0);
+});
+
+test("기존 PAT 설정은 PAT 모드를 유지하고 기존 토큰으로 업로드한다", async () => {
+	const f = await fixture();
+	assert.equal(f.plugin.settings.authMode, "pat");
+	await f.plugin.uploadToGithub(image());
+	assert.equal(f.requests[0].headers.Authorization, "Bearer fake");
+});
+
+test("브라우저 로그인 업로드는 PAT 대신 OAuth 토큰을 사용하고 선택 전에는 준비되지 않는다", async () => {
+	const f = await fixture({ authMode: "github", oauthRepositoryId: 0 });
+	f.plugin.auth = { revision: 1, connected: true, getAccessToken: async () => "browser-token" };
+	assert.equal(f.plugin.isConfigured(), false);
+	f.plugin.settings.oauthRepositoryId = 123;
+	assert.equal(f.plugin.isConfigured(), true);
+	await f.plugin.uploadToGithub(image());
+	assert.equal(f.requests[0].headers.Authorization, "Bearer browser-token");
+	assert.equal(f.plugin.settings.githubToken, "fake");
+});
+
+test("OAuth 연결이 만료되어도 저장된 PAT로 자동 업로드하지 않는다", async () => {
+	const f = await fixture({ authMode: "github", oauthRepositoryId: 123 });
+	f.plugin.auth = { revision: 1, connected: true, getAccessToken: async () => { throw new Error("Reconnect"); } };
+	await assert.rejects(f.plugin.uploadToGithub(image()), /Reconnect/);
+	assert.equal(f.requests.length, 0);
+});
+
+test("마지막 노트 확인을 기다리는 중 로그아웃하면 확보한 OAuth 토큰으로 PUT을 보내지 않는다", async () => {
+	const f = await fixture({ authMode: "github", oauthRepositoryId: 123 });
+	f.plugin.auth = { revision: 1, connected: true, getAccessToken: async () => "browser-token" };
+	let checks = 0;
+	await assert.rejects(f.plugin.uploadToGithub(image(), async () => {
+		checks++;
+		if (checks === 2) { f.plugin.auth.revision++; f.plugin.auth.connected = false; }
+		return true;
+	}), /connection changed/);
 	assert.equal(f.requests.length, 0);
 });

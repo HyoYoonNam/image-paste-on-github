@@ -45,6 +45,7 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: "main.js",
 	minify: prod,
+	define: { AUTH_RELAY_URL: JSON.stringify(process.env.IMAGE_PASTE_AUTH_RELAY_URL ?? "") },
 });
 
 if (prod) {

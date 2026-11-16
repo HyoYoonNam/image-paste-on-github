@@ -33,7 +33,7 @@ JSON 요청과 응답은 UTF-8을 사용한다. 토큰 응답에는 `Cache-Contr
 
 1. 플러그인은 암호학적 난수로 PKCE verifier와 `clientState`를 만든다. `S256` challenge를 계산하고, 원본 vault의 메모리에 verifier와 대기 상태를 둔다.
 2. `/auth/start`는 별도의 난수 `transactionId`와 GitHub용 OAuth `state`를 생성한다. 서버는 이 값들과 challenge, `clientState`, 만료 시각을 하나의 트랜잭션으로 묶는다. GitHub 인증 URL에는 `code_challenge`, `code_challenge_method=S256`, OAuth `state`, 고정된 callback URL, `scope=offline_access`를 포함한다.
-3. 사용자는 외부 브라우저에서 GitHub에 로그인하고 앱을 승인한다. 저장소 접근은 GitHub App 설치에서 선택한 저장소와 Contents 권한에 따른다. 사용자 승인과 저장소 설치는 별도 단계이므로, 승인만으로 업로드 권한이 생겼다고 판단하지 않는다.
+3. 사용자는 외부 브라우저에서 GitHub에 로그인하고 앱을 승인한다. 저장소 접근은 GitHub App 설치에서 선택한 저장소와 Contents 권한에 따른다. 사용자 승인과 저장소 설치는 별도 단계이므로, 승인만으로 업로드 권한이 생겼다고 판단하지 않는다. 플러그인은 쓰기 권한이 확인된 공개 저장소를 사용자가 선택한 뒤 업로드를 허용한다. 새 로그인에서 이전 PAT의 저장소를 자동 선택하지 않는다.
 4. `/auth/callback`은 서버에 저장된 OAuth `state`, 만료 시각, 처리 상태를 확인한다. 정상 코드 또는 허용된 거절 결과를 보관한다. 같은 트랜잭션의 callback을 다시 받아 코드를 덮어쓰지 않는다.
 5. 브라우저에는 다음 형태의 고정 링크를 제공한다. 여기에 authorization code, verifier, 토큰, vault 이름을 넣지 않는다.
 
@@ -59,7 +59,9 @@ GitHub의 PKCE 지원은 `client_secret` 요구를 없애지 않는다. 따라�
 
 GitHub는 refresh token을 사용하면 이전 refresh token과 access token을 무효화한다. 플러그인은 동시에 여러 갱신을 시작하지 않고 하나의 진행 중인 요청을 공유한다. 새 access token과 refresh token은 한 쌍으로 교체한다.
 
-갱신 응답을 받더라도 로그아웃이나 세션 변경이 먼저 발생했으면 이전 세션에 저장하지 않는다. 갱신 실패나 응답 손실로 토큰 상태가 불확실해진 경우 무한 재시도하지 않고 재로그인을 안내한다. 토큰은 발급 당시의 relay에만 보낸다.
+갱신 응답을 받더라도 로그아웃이나 세션 변경이 먼저 발생했으면 이전 세션에 저장하지 않는다. 저장 작업 도중 인증이 취소된 경우에도 저장 완료 후 자격 증명을 지운다. 새로 발급받은 토큰을 저장하지 못했다면 원격 회수를 시도한다. 갱신 실패나 응답 손실로 토큰 상태가 불확실해진 경우 무한 재시도하지 않고 재로그인을 안내한다. 토큰은 발급 당시의 relay에만 보낸다.
+
+업로드는 시작한 인증 세대를 기억한다. 이미지 읽기나 노트 확인을 기다리는 동안 로그아웃, 계정 변경, 인증 방식 변경이 발생하면 GitHub PUT 요청을 새로 시작하지 않는다. 최종 비동기 검사가 끝난 직후에도 같은 인증 상태인지 확인한다.
 
 연결 해제는 로컬 세션을 지우고 진행 중인 인증을 무효화한다. 원격 회수에는 서버가 `DELETE /applications/{client_id}/token`을 사용한다. 사용자의 모든 기기에서 권한을 제거하는 `/grant` 삭제는 사용하지 않는다. 토큰 만료나 네트워크 오류로 원격 회수를 확인하지 못해도 로컬 연결은 해제하며, GitHub에서 앱 권한을 직접 해제할 수 있음을 안내한다. 로컬 삭제만으로 원격의 모든 토큰이 회수됐다고 표시하지 않는다.
 
@@ -77,7 +79,7 @@ GitHub는 refresh token을 사용하면 이전 refresh token과 access token을 
 
 모의 GitHub를 사용하는 테스트는 정상 로그인 외에 잘못된 state와 verifier, callback 재사용, 동시 완료 요청, 만료, 취소, 승인 전 완료 요청, GitHub 거절, timeout과 잘못된 응답을 확인한다. callback HTML과 deep link에 code나 토큰이 없어야 하고, 처리된 code를 다시 교환할 수 없어야 한다.
 
-플러그인 테스트는 다른 vault의 callback 무시, 수동 완료, 로그인 중 취소와 종료, 동시 갱신, 갱신 중 로그아웃, 토큰 저장 실패, relay 주소 변경, PAT로 자동 전환하지 않는 동작을 확인한다. 모의 서버 통합 테스트는 실제 PKCE 계산과 HTTP 요청으로 프로토콜을 연결하되 외부 GitHub 계정이나 secret은 사용하지 않는다.
+플러그인 테스트는 다른 vault의 callback 무시, 수동 완료, 로그인 중 취소와 종료, 동시 갱신, 갱신 중 로그아웃, 토큰 저장 실패, relay 주소 변경, PAT로 자동 전환하지 않는 동작을 확인한다. `tests/auth-relay.test.cjs`는 실제 클라이언트와 로컬 HTTP relay를 연결해 PKCE 계산, callback HTML, 갱신, 취소를 확인하되 GitHub 응답은 모의 처리한다. 외부 GitHub 계정이나 secret은 사용하지 않는다.
 
 실제 App과 배포 주소가 준비되면 외부 브라우저에서 승인 후 데스크톱과 모바일로 복귀하는지, 선택한 저장소에만 업로드하는지, 만료 토큰 갱신과 연결 해제가 동작하는지 별도로 확인한다.
 
