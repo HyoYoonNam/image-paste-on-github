@@ -6,7 +6,7 @@ GitHub App 인증은 운영 환경과 로컬 개발 모두 Workers와 D1에서 �
 
 ## 운영 인스턴스
 
-기본 relay는 `https://image-paste-auth.dev-rudevico.workers.dev`, 공개 App은 [Image Paste on GitHub](https://github.com/apps/image-paste-on-github)다. 플러그인을 빌드하면 이 origin이 기본값에 들어가며 기존 사용자 설정은 보존한다.
+기본 relay는 `https://image-paste-auth.dev-rudevico.workers.dev`다. 공개 App 설치는 플러그인 설정의 **GitHub App access → Choose repositories on GitHub**에서 시작한다. 플러그인을 빌드하면 이 origin이 기본값에 들어가며 기존 사용자 설정은 보존한다.
 
 2026-11-16에 Workers Free 계정으로 배포했다. D1 migration, 15분 Cron, 로그와 preview 비활성 설정을 적용했다. 실제 배포에서 health 200, 로그인 시작 200, 승인 전 완료 409, 취소 204, 취소 후 완료 404를 확인했다. macOS의 Obsidian 1.12.7에서 브라우저 로그인과 복귀, 저장소 선택, 샘플 PNG 업로드가 성공했고 로컬 이미지 첨부는 생기지 않았다.
 
