@@ -7,6 +7,8 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	type SettingDefinitionEmpty,
+	type SettingDefinitionRender,
 	TFile,
 	arrayBufferToBase64,
 	normalizePath,
@@ -523,7 +525,7 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 			this.repositories = [];
 			await this.saveSettings();
 			new Notice("Connected to GitHub. Select a public image repository in the plugin settings.");
-			this.settingsTab?.display();
+			this.settingsTab?.refresh();
 			await this.refreshRepositories();
 		} catch (error) { this.authNotice(error); }
 	}
@@ -543,7 +545,7 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		});
 		if (!this.active || this.settings.authMode !== "github" || !this.auth.connected || this.auth.revision !== revision) return;
 		this.repositories = repositories;
-		this.settingsTab?.display();
+		this.settingsTab?.refresh();
 		if (!this.repositories.length) new Notice("No writable public image repositories were found. Install the GitHub App on your image repository, then refresh the list.");
 	}
 
@@ -576,6 +578,15 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 	}
 }
 
+type ImagePasteSettingRow = SettingDefinitionEmpty | (
+	Omit<SettingDefinitionRender, "render"> & { render: (setting: Setting) => void }
+);
+interface ImagePasteSettingsPage {
+	type: "page";
+	name: string;
+	items: ImagePasteSettingRow[];
+}
+
 class ImagePasteSettingTab extends PluginSettingTab {
 	plugin: ImagePasteOnGithubPlugin;
 
@@ -584,106 +595,115 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-
-		const warning = containerEl.createDiv({
-			cls: "image-paste-github-warning",
-		});
-		warning.createEl("strong", { text: "Heads up: " });
-		warning.appendText(
-			"the target repository must be public, so every pasted image becomes publicly accessible."
-		);
-
-		this.renderConnection(containerEl);
-
-		if (this.plugin.settings.authMode === "github") {
-			new Setting(containerEl)
-				.setName("Image repository")
-				.setDesc("Select a public repository allowed by the GitHub App. Install the App on only your image repository.")
-				.addDropdown((dropdown) => {
-					dropdown.addOption("", "Choose a repository");
-					for (const repo of this.plugin.repositories) dropdown.addOption(String(repo.id), `${repo.owner}/${repo.name}`);
-					const selected = this.plugin.settings.oauthRepositoryId;
-					if (selected && !this.plugin.repositories.some(repo => repo.id === selected)) {
-						dropdown.addOption(String(selected), `${this.plugin.settings.owner}/${this.plugin.settings.repo}`);
-					}
-					dropdown.setValue(selected ? String(selected) : "").onChange(async (value) => {
-						const repo = this.plugin.repositories.find(item => String(item.id) === value);
-						if (!repo) return;
-						this.plugin.settings.owner = repo.owner;
-						this.plugin.settings.repo = repo.name;
-						this.plugin.settings.branch = repo.defaultBranch;
-						this.plugin.settings.oauthRepositoryId = repo.id;
-						await this.plugin.saveSettings();
-						this.display();
+	getSettingDefinitions(): (ImagePasteSettingRow | ImagePasteSettingsPage)[] {
+		return [
+			{
+				name: "Public uploads",
+				desc: "The target repository must be public, so every pasted image becomes publicly accessible.",
+				render: setting => { setting.settingEl.classList.add("image-paste-github-warning"); },
+			},
+			...this.connectionDefinitions(),
+			{
+				name: "Image repository",
+				desc: "Select a public repository allowed by the GitHub App. Install the App on only your image repository.",
+				visible: this.plugin.settings.authMode === "github",
+				render: setting => {
+					setting.addDropdown(dropdown => {
+						dropdown.addOption("", "Choose a repository");
+						for (const repo of this.plugin.repositories) dropdown.addOption(String(repo.id), repo.owner + "/" + repo.name);
+						const selected = this.plugin.settings.oauthRepositoryId;
+						if (selected && !this.plugin.repositories.some(repo => repo.id === selected)) {
+							dropdown.addOption(String(selected), this.plugin.settings.owner + "/" + this.plugin.settings.repo);
+						}
+						dropdown.setValue(selected ? String(selected) : "").onChange(async value => {
+							const repo = this.plugin.repositories.find(item => String(item.id) === value);
+							if (!repo) return;
+							this.plugin.settings.owner = repo.owner;
+							this.plugin.settings.repo = repo.name;
+							this.plugin.settings.branch = repo.defaultBranch;
+							this.plugin.settings.oauthRepositoryId = repo.id;
+							await this.plugin.saveSettings();
+							this.refresh();
+						});
 					});
-				});
-		}
-
-		new Setting(containerEl).setName("Create repository")
-			.setDesc("Create a public image repository, then grant the GitHub App access to it.")
-			.addButton(button => button.setButtonText("Create").onClick(() => {
-				if (this.plugin.settings.authMode === "pat") void this.createRepository();
-				else window.open("https://github.com/new?name=obsidian-image-cdn", "_blank");
-			}));
-
-		new Setting(containerEl)
-			.setName("Branch")
-			.setDesc("Branch to commit to.")
-			.addText((text) =>
-				text
-					.setPlaceholder("main")
-					.setValue(this.plugin.settings.branch)
-					.onChange(async (value) => {
-						this.plugin.settings.branch = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Upload path")
-			.setDesc("Folder prefix inside the repo for uploaded images.")
-			.addText((text) =>
-				text
-					.setPlaceholder("assets")
-					.setValue(this.plugin.settings.uploadPath)
-					.onChange(async (value) => {
-						this.plugin.settings.uploadPath =
-							value.trim() || "assets";
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Save locally on failure")
-			.setDesc(
-				"If an upload fails, save the image into your vault. If HEIC conversion fails, preserve the original as a file link."
-			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.fallbackToLocal)
-					.onChange(async (value) => {
-						this.plugin.settings.fallbackToLocal = value;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Test connection")
-			.setDesc("Check repository visibility and reported access. This does not upload a file.")
-			.addButton((button) =>
-				button.setButtonText("Test").onClick(async () => {
-					await this.testConnection();
-				})
-			);
-		this.renderAdvanced(containerEl);
-
+				},
+			},
+			{
+				name: "Create repository",
+				desc: "Create a public image repository, then grant the GitHub App access to it.",
+				render: setting => {
+					setting.addButton(button => button.setButtonText("Create").onClick(() => {
+						if (this.plugin.settings.authMode === "pat") void this.createRepository();
+						else window.open("https://github.com/new?name=obsidian-image-cdn", "_blank");
+					}));
+				},
+			},
+			{
+				name: "Branch",
+				desc: "Branch to commit to.",
+				render: setting => {
+					setting.addText(text => text.setPlaceholder("main").setValue(this.plugin.settings.branch)
+						.onChange(async value => { this.plugin.settings.branch = value.trim(); await this.plugin.saveSettings(); }));
+				},
+			},
+			{
+				name: "Upload path",
+				desc: "Folder prefix inside the repo for uploaded images.",
+				aliases: ["image folder", "assets"],
+				render: setting => {
+					setting.addText(text => text.setPlaceholder("assets").setValue(this.plugin.settings.uploadPath)
+						.onChange(async value => { this.plugin.settings.uploadPath = value.trim() || "assets"; await this.plugin.saveSettings(); }));
+				},
+			},
+			{
+				name: "Save locally on failure",
+				desc: "If an upload fails, save the image into your vault. If HEIC conversion fails, preserve the original as a file link.",
+				aliases: ["fallback", "HEIC"],
+				render: setting => {
+					setting.addToggle(toggle => toggle.setValue(this.plugin.settings.fallbackToLocal)
+						.onChange(async value => { this.plugin.settings.fallbackToLocal = value; await this.plugin.saveSettings(); }));
+				},
+			},
+			{
+				name: "Test connection",
+				desc: "Check repository visibility and reported access. This does not upload a file.",
+				render: setting => {
+					setting.addButton(button => button.setButtonText("Test").onClick(async () => { await this.testConnection(); }));
+				},
+			},
+			{ type: "page", name: "Advanced settings", items: this.advancedDefinitions() },
+		];
 	}
 
+	// 1.13.0 미만에서는 같은 설정 정의를 기존 Setting API로 그린다.
+	display(): void { this.renderLegacy(); }
 
-	private renderConnection(containerEl: HTMLElement): void {
+	refresh(): void {
+		if (requireApiVersion("1.13.0")) this.update();
+		else this.renderLegacy();
+	}
+
+	private renderLegacy(): void {
+		this.containerEl.empty();
+		for (const definition of this.getSettingDefinitions()) {
+			if ("type" in definition) {
+				const details = this.containerEl.createEl("details");
+				details.createEl("summary", { text: definition.name });
+				const content = details.createDiv();
+				for (const row of definition.items) this.renderLegacyRow(content, row);
+			} else {
+				this.renderLegacyRow(this.containerEl, definition);
+			}
+		}
+	}
+
+	private renderLegacyRow(containerEl: HTMLElement, definition: ImagePasteSettingRow): void {
+		if (definition.visible === false || (typeof definition.visible === "function" && !definition.visible())) return;
+		const setting = new Setting(containerEl).setName(definition.name).setDesc(definition.desc ?? "");
+		definition.render?.(setting);
+	}
+
+	private connectionDefinitions(): ImagePasteSettingRow[] {
 		const { auth, settings } = this.plugin;
 		const connected = settings.authMode === "github" && auth.connected;
 		const description = connected ? "Connected. Images upload directly from Obsidian to GitHub." :
@@ -691,93 +711,136 @@ class ImagePasteSettingTab extends PluginSettingTab {
 			auth.pending ? "Approve access in your browser, then return to this vault." :
 			settings.authRelayUrl ? "Sign in through GitHub and select your image repository." :
 			"Browser sign-in needs an authentication relay. Configure a trusted relay in Advanced settings, or use a PAT.";
-		new Setting(containerEl).setName("GitHub connection").setDesc(description)
-			.addButton(button => button.setButtonText(connected ? "Disconnect" : "Connect with GitHub")
-				.setDisabled(!connected && !settings.authRelayUrl)
-				.onClick(async () => {
-					button.setDisabled(true);
-					try {
-						if (connected) {
-							const revoked = await auth.disconnect();
-							this.plugin.repositories = [];
-							this.plugin.settings.oauthRepositoryId = 0;
-							await this.plugin.saveSettings();
-							new Notice(revoked ? "GitHub disconnected on this device." : "Local GitHub credentials cleared. Remote token revocation could not be confirmed; review Authorized GitHub Apps on GitHub.");
-						} else {
-							settings.authMode = "github";
-							settings.oauthRepositoryId = 0;
-							await this.plugin.saveSettings();
-							await auth.begin(settings.authRelayUrl);
-						}
-					} catch (error) { this.plugin.authNotice(error); }
-					finally { this.display(); }
-				}));
-		if (auth.pending) {
-			new Setting(containerEl).setName("Finish browser sign-in")
-				.setDesc("If GitHub returned to another vault, open this vault and complete sign-in here. Restart sign-in if Obsidian was closed.")
-				.addButton(button => button.setButtonText("Complete sign in").onClick(() => { void this.plugin.completeSignIn(); }))
-				.addButton(button => button.setButtonText("Cancel").onClick(async () => { await auth.cancel(); this.display(); }));
-		}
-		if (settings.authMode === "github" && (connected || settings.authRelayUrl)) {
-			new Setting(containerEl).setName("GitHub App access")
-				.setDesc("Choose only your public image repository when installing the App, then refresh the repository list.")
-				.addButton(button => button.setButtonText("Choose repositories on GitHub").onClick(async () => {
-					try { await this.plugin.openInstallation(); } catch (error) { this.plugin.authNotice(error); }
-				}))
-				.addButton(button => button.setButtonText("Refresh repositories").setDisabled(!connected).onClick(async () => {
-					button.setDisabled(true);
-					try { await this.plugin.refreshRepositories(); } catch (error) { this.plugin.authNotice(error); }
-					finally { button.setDisabled(false); }
-				}));
-		}
-		if (settings.authMode === "github") containerEl.createEl("p", { text: this.plugin.oauthStorage.persistent
-			? "GitHub login credentials use Obsidian Secret storage, outside this plugin's data.json. Other plugins can access Secret storage."
-			: "This Obsidian version keeps browser login only for this session. Obsidian 1.11.4 or later can save it in Secret storage." });
+		return [
+			{
+				name: "GitHub connection",
+				desc: description,
+				aliases: ["login", "sign in", "disconnect"],
+				render: setting => {
+					setting.addButton(button => button.setButtonText(connected ? "Disconnect" : "Connect with GitHub")
+						.setDisabled(!connected && !settings.authRelayUrl).onClick(async () => {
+							button.setDisabled(true);
+							try {
+								if (connected) {
+									const revoked = await auth.disconnect();
+									this.plugin.repositories = [];
+									settings.oauthRepositoryId = 0;
+									await this.plugin.saveSettings();
+									new Notice(revoked ? "GitHub disconnected on this device." : "Local GitHub credentials cleared. Remote token revocation could not be confirmed; review Authorized GitHub Apps on GitHub.");
+								} else {
+									settings.authMode = "github";
+									settings.oauthRepositoryId = 0;
+									await this.plugin.saveSettings();
+									await auth.begin(settings.authRelayUrl);
+								}
+							} catch (error) { this.plugin.authNotice(error); }
+							finally { this.refresh(); }
+						}));
+				},
+			},
+			{
+				name: "Finish browser sign-in",
+				desc: "If GitHub returned to another vault, open this vault and complete sign-in here. Restart sign-in if Obsidian was closed.",
+				visible: auth.pending,
+				render: setting => {
+					setting.addButton(button => button.setButtonText("Complete sign in").onClick(() => { void this.plugin.completeSignIn(); }))
+						.addButton(button => button.setButtonText("Cancel").onClick(async () => { await auth.cancel(); this.refresh(); }));
+				},
+			},
+			{
+				name: "GitHub App access",
+				desc: "Choose only your public image repository when installing the App, then refresh the repository list.",
+				visible: settings.authMode === "github" && Boolean(connected || settings.authRelayUrl),
+				render: setting => {
+					setting.addButton(button => button.setButtonText("Choose repositories on GitHub").onClick(async () => {
+						try { await this.plugin.openInstallation(); } catch (error) { this.plugin.authNotice(error); }
+					})).addButton(button => button.setButtonText("Refresh repositories").setDisabled(!connected).onClick(async () => {
+						button.setDisabled(true);
+						try { await this.plugin.refreshRepositories(); } catch (error) { this.plugin.authNotice(error); }
+						finally { button.setDisabled(false); }
+					}));
+				},
+			},
+			{
+				name: "Browser credentials",
+				desc: this.plugin.oauthStorage.persistent
+					? "GitHub login credentials use Obsidian Secret storage, outside this plugin's data.json. Other plugins can access Secret storage."
+					: "This Obsidian version keeps browser login only for this session. Obsidian 1.11.4 or later can save it in Secret storage.",
+				visible: settings.authMode === "github",
+			},
+		];
 	}
 
-	private renderAdvanced(containerEl: HTMLElement): void {
-		const details = containerEl.createEl("details");
-		details.createEl("summary", { text: "Advanced settings" });
-		const advanced = details.createDiv();
-		new Setting(advanced).setName("Authentication method")
-			.setDesc("PAT mode is kept for existing users and self-managed access. A failed browser login never switches to PAT automatically.")
-			.addDropdown(dropdown => dropdown.addOption("github", "GitHub browser sign-in").addOption("pat", "Personal access token")
-				.setValue(this.plugin.settings.authMode).onChange(async (mode) => {
-					try {
-						if (mode === "pat") {
-							const revoked = await this.plugin.auth.disconnect();
-							if (!revoked) new Notice("Browser credentials cleared locally. Review Authorized GitHub Apps on GitHub to revoke remote access.");
-						}
-						this.plugin.settings.authMode = mode === "pat" ? "pat" : "github";
-						this.plugin.settings.oauthRepositoryId = 0;
-						this.plugin.repositories = [];
-						await this.plugin.saveSettings();
-						this.display();
-					} catch (error) { this.plugin.authNotice(error); }
-				}));
-		new Setting(advanced).setName("Authentication relay")
-			.setDesc("Use only a relay you trust: it handles GitHub login and refresh credentials. Disconnect and cancel sign-in before changing it. Images do not pass through it.")
-			.addText(text => text.setPlaceholder("https://auth.example.com").setValue(this.plugin.settings.authRelayUrl)
-				.setDisabled(this.plugin.auth.connected || this.plugin.auth.pending)
-				.onChange(async value => { this.plugin.settings.authRelayUrl = value.trim(); await this.plugin.saveSettings(); }));
-		advanced.createEl("p", { text: "Your PAT token is preserved independently of browser credentials. PATs are stored unencrypted in this vault's plugin data.json. Do not sync, commit, or share that file." });
-		for (const [key, label, placeholder] of [["owner", "Owner", "your-username"], ["repo", "Repository", "my-image-cdn"]] as const) {
-			new Setting(advanced).setName(label).setDesc("Used for PAT uploads.")
-				.addText(text => text.setPlaceholder(placeholder).setValue(this.plugin.settings[key])
-					.setDisabled(this.plugin.settings.authMode !== "pat")
-					.onChange(async value => { this.plugin.settings[key] = value.trim(); await this.plugin.saveSettings(); }));
-		}
-		new Setting(advanced).setName("GitHub token").setDesc("Fine-grained PAT limited to one image repository, with Contents: read and write and an expiration date.")
-			.addText(text => {
-				text.inputEl.type = "password";
-				text.setPlaceholder("github_pat_...").setValue(this.plugin.settings.githubToken)
-					.onChange(async value => { this.plugin.settings.githubToken = value.trim(); await this.plugin.saveSettings(); });
-			});
-		new Setting(advanced).setName("Create a token")
-			.addButton(button => button.setButtonText("Open GitHub").onClick(() => { window.open("https://github.com/settings/personal-access-tokens/new", "_blank"); }));
-		new Setting(advanced).setName("Review GitHub authorizations")
-			.setDesc("Disconnect removes this device's credentials. Manage the GitHub App installation or revoke authorization on GitHub to remove remaining access.")
-			.addButton(button => button.setButtonText("Open GitHub").onClick(() => { window.open("https://github.com/settings/apps/authorizations", "_blank"); }));
+	private advancedDefinitions(): ImagePasteSettingRow[] {
+		return [
+			{
+				name: "Authentication method",
+				desc: "PAT mode is kept for existing users and self-managed access. A failed browser login never switches to PAT automatically.",
+				render: setting => {
+					setting.addDropdown(dropdown => dropdown.addOption("github", "GitHub browser sign-in").addOption("pat", "Personal access token")
+						.setValue(this.plugin.settings.authMode).onChange(async mode => {
+							try {
+								if (mode === "pat") {
+									const revoked = await this.plugin.auth.disconnect();
+									if (!revoked) new Notice("Browser credentials cleared locally. Review Authorized GitHub Apps on GitHub to revoke remote access.");
+								}
+								this.plugin.settings.authMode = mode === "pat" ? "pat" : "github";
+								this.plugin.settings.oauthRepositoryId = 0;
+								this.plugin.repositories = [];
+								await this.plugin.saveSettings();
+								this.refresh();
+							} catch (error) { this.plugin.authNotice(error); }
+						}));
+				},
+			},
+			{
+				name: "Authentication relay",
+				desc: "Use only a relay you trust: it handles GitHub login and refresh credentials. Disconnect and cancel sign-in before changing it. Images do not pass through it.",
+				render: setting => {
+					setting.addText(text => text.setPlaceholder("https://auth.example.com").setValue(this.plugin.settings.authRelayUrl)
+						.setDisabled(this.plugin.auth.connected || this.plugin.auth.pending)
+						.onChange(async value => { this.plugin.settings.authRelayUrl = value.trim(); await this.plugin.saveSettings(); }));
+				},
+			},
+			{
+				name: "PAT storage",
+				desc: "Your PAT token is preserved independently of browser credentials. PATs are stored unencrypted in this vault's plugin data.json. Do not sync, commit, or share that file.",
+			},
+			...([["owner", "Owner", "your-username"], ["repo", "Repository", "my-image-cdn"]] as const).map(([key, name, placeholder]): ImagePasteSettingRow => ({
+				name,
+				desc: "Used for PAT uploads.",
+				render: setting => {
+					setting.addText(text => text.setPlaceholder(placeholder).setValue(this.plugin.settings[key])
+						.setDisabled(this.plugin.settings.authMode !== "pat")
+						.onChange(async value => { this.plugin.settings[key] = value.trim(); await this.plugin.saveSettings(); }));
+				},
+			})),
+			{
+				name: "GitHub token",
+				desc: "Fine-grained PAT limited to one image repository, with Contents: read and write and an expiration date.",
+				aliases: ["personal access token", "PAT"],
+				render: setting => {
+					setting.addText(text => {
+						text.inputEl.type = "password";
+						text.setPlaceholder("github_pat_...").setValue(this.plugin.settings.githubToken)
+							.onChange(async value => { this.plugin.settings.githubToken = value.trim(); await this.plugin.saveSettings(); });
+					});
+				},
+			},
+			{
+				name: "Create a token",
+				render: setting => {
+					setting.addButton(button => button.setButtonText("Open GitHub").onClick(() => { window.open("https://github.com/settings/personal-access-tokens/new", "_blank"); }));
+				},
+			},
+			{
+				name: "Review GitHub authorizations",
+				desc: "Disconnect removes this device's credentials. Manage the GitHub App installation or revoke authorization on GitHub to remove remaining access.",
+				render: setting => {
+					setting.addButton(button => button.setButtonText("Open GitHub").onClick(() => { window.open("https://github.com/settings/apps/authorizations", "_blank"); }));
+				},
+			},
+		];
 	}
 
 	private async testConnection() {
@@ -870,7 +933,7 @@ class ImagePasteSettingTab extends PluginSettingTab {
 				this.plugin.settings.repo = repo.name ?? repoName;
 				await this.plugin.saveSettings();
 				new Notice(`Created ${repo.full_name ?? repoName}.`);
-				this.display();
+				this.refresh();
 				return;
 			}
 

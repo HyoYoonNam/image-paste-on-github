@@ -16,13 +16,15 @@ Install and enable Image Paste on GitHub from [Obsidian's community plugins](htt
 
 ## Quick start
 
-1. Create a **public image repository**. Choose **GitHub App access → Choose repositories on GitHub** and install [Image Paste on GitHub](https://github.com/apps/image-paste-on-github) on **only that repository**, granting **Contents: read and write**.
+1. Create a **public image repository**. In the plugin settings, choose **GitHub App access → Choose repositories on GitHub** to open the GitHub App installation page. Install Image Paste on GitHub on **only that repository**, granting **Contents: read and write**.
 2. Select **Connect with GitHub**, approve the browser login, then select **Return to Obsidian**. No PAT needs to be copied. If Obsidian opens another vault, return to the original vault and select **Complete sign in**.
 3. Choose the **Image repository**, check **Branch** and **Upload path**, then paste or drop an image into a Markdown note. Selecting a repository fills in its default branch.
 
 New installations of **1.2.0** use the plugin maintainer's [hosted authentication relay](https://image-paste-auth.dev-rudevico.workers.dev/health) by default; users do not need to deploy a server. It runs on **Cloudflare Workers Free and D1 Free**. Free-plan limits can temporarily interrupt sign-in or token renewal.
 
 Existing PAT users keep their current authentication mode and token after upgrading. PAT entry is now under **Advanced settings**. Saved custom or empty relay addresses are also preserved. If an earlier source build saved an empty address, set **Authentication relay** to `https://image-paste-auth.dev-rudevico.workers.dev` to enable browser login.
+
+On Obsidian 1.13.0 or later, individual settings also appear in Obsidian's settings search, including the Advanced settings page. Earlier supported versions show the same settings with a collapsible Advanced section.
 
 <details>
 <summary>Browser login, credentials, and disconnecting</summary>
@@ -121,6 +123,16 @@ The browser tests use installed Google Chrome by default. Set `CHROME_EXECUTABLE
 To override the hosted relay, build with `IMAGE_PASTE_AUTH_RELAY_URL=https://YOUR-AUTH-DOMAIN npm run build`. This value is a public origin, never a client secret. Keep server secrets in the relay deployment only.
 
 For manual testing, copy `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/image-paste-on-github/`.
+
+Releases from 1.2.2 are built and tested by the [release workflow](.github/workflows/release.yml). Pushing a version tag that matches `package.json`, `manifest.json`, and `versions.json` builds all three release assets, generates GitHub artifact attestations, verifies their source commit, and publishes the release using `docs/releases/<version>.md`. The workflow uses pinned GitHub Actions and does not need a stored signing key.
+
+After downloading a release asset, verify its origin with the GitHub CLI:
+
+```bash
+gh attestation verify main.js --repo HyoYoonNam/image-paste-on-github --signer-workflow HyoYoonNam/image-paste-on-github/.github/workflows/release.yml
+```
+
+The same command works for `manifest.json` and `styles.css` by changing the filename.
 
 The converter is pinned in `package.json` and `package-lock.json`. To replace it, update the dependency and lockfile, or the adapter in `src/heic.ts`, then run `npm ci` and `npm run build`. [Third-party notices](THIRD_PARTY_NOTICES) include pinned upstream source and decoder build instructions.
 
