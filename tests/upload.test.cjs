@@ -27,6 +27,7 @@ async function fixture(settings = {}) {
 	const obsidian = {
 		Plugin,
 		PluginSettingTab,
+		requireApiVersion: () => false,
 		Notice: class {},
 		arrayBufferToBase64: (buffer) => Buffer.from(buffer).toString("base64"),
 		normalizePath: (value) => value.replace(/\\/g, "/").replace(/\/{2,}/g, "/"),

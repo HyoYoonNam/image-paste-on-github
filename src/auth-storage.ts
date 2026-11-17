@@ -29,7 +29,7 @@ export class OAuthStorage {
 		let id = this.getId();
 		if (!/^image-paste-github-[a-f0-9]{32}$/.test(id)) {
 			if (!session) return;
-			id = `image-paste-github-${Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+			id = `image-paste-github-${Array.from(window.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("")}`;
 			await this.setId(id);
 		}
 		this.secrets.setSecret(id, session ? JSON.stringify(session) : "");

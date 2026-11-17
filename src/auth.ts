@@ -105,7 +105,7 @@ export class GitHubAuth {
 		await this.cancel();
 		const generation = ++this.generation;
 		const relayUrl = normalizeRelayUrl(relayAddress);
-		const crypto = this.dependencies.crypto ?? globalThis.crypto;
+		const crypto = this.dependencies.crypto ?? window.crypto;
 		if (!crypto?.subtle) throw new AuthError("crypto_unavailable", "This version of Obsidian cannot start secure browser sign-in. Update Obsidian or use a PAT in Advanced settings.");
 		const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
 		const state = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -282,16 +282,16 @@ export class GitHubAuth {
 
 	private async call(relay: string, path: string, body?: object): Promise<unknown> {
 		let response: { status: number; json?: unknown };
-		let timer: ReturnType<typeof setTimeout> | undefined;
+		let timer: number | undefined;
 		try {
 			const request = this.dependencies.request({ url: `${relay}${path}`, method: body ? "POST" : "GET",
 				headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) },
 				...(body ? { body: JSON.stringify(body) } : {}) });
 			response = await Promise.race([request, new Promise<never>((_, reject) => {
-				timer = setTimeout(() => reject(new Error("Authentication request timed out")), 20_000);
+				timer = window.setTimeout(() => reject(new Error("Authentication request timed out")), 20_000);
 			})]);
 		} catch { throw new AuthError("network", "Could not reach the authentication relay. Check the connection and try again."); }
-		finally { if (timer !== undefined) clearTimeout(timer); }
+		finally { if (timer !== undefined) window.clearTimeout(timer); }
 		if (response.status >= 200 && response.status < 300) return response.json;
 		const code = object(response.json).error;
 		if (response.status === 409 && code === "authorization_pending") throw new AuthError("authorization_pending", "Finish approval in your browser, then choose Complete sign in.");

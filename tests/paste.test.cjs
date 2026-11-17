@@ -51,6 +51,7 @@ async function fixture() {
 	class PluginSettingTab {}
 	const obsidian = {
 		Plugin, PluginSettingTab, MarkdownView,
+		requireApiVersion: () => false,
 		Notice: class { constructor(message) { notices.push(message); } },
 		requestUrl: () => { throw new Error("실제 네트워크 요청은 허용하지 않음"); }
 	};

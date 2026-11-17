@@ -32,6 +32,7 @@ globalThis.require = (name) => {
 			addSettingTab() {}
 		},
 		PluginSettingTab: class {},
+		requireApiVersion: () => false,
 		MarkdownView,
 		Notice: class { constructor(message) { notices.push(message); } },
 		arrayBufferToBase64(buffer) {

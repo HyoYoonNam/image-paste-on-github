@@ -11,8 +11,8 @@ const compiled = transformSync(
 	{ loader: "ts", format: "cjs", target: "es2018" }
 ).code;
 const sandbox = {
-	module: { exports: {} }, URL, TextEncoder, Date, setTimeout, clearTimeout,
-	crypto: webcrypto,
+	module: { exports: {} }, URL, TextEncoder, Date,
+	window: { crypto: webcrypto, setTimeout, clearTimeout },
 	btoa: value => Buffer.from(value, "binary").toString("base64"),
 	atob: value => Buffer.from(value, "base64").toString("binary"),
 };
@@ -391,7 +391,9 @@ test("갱신한 토큰 쌍을 저장하지 못하면 새 토큰을 회수하고 
 
 test("응답을 잃은 갱신은 제한 시간 뒤 종료하고 같은 refresh token을 재전송하지 않는다", async () => {
 	const timers = [], requests = [], writes = [];
-	const context = { ...sandbox, module: { exports: {} }, setTimeout: (callback, ms) => { assert.equal(ms, 20_000); timers.push(callback); return timers.length; }, clearTimeout() {} };
+	const context = { ...sandbox, module: { exports: {} }, window: {
+		setTimeout: (callback, ms) => { assert.equal(ms, 20_000); timers.push(callback); return timers.length; }, clearTimeout() {},
+	} };
 	vm.runInNewContext(compiled, context);
 	const auth = new context.module.exports.GitHubAuth({
 		now: () => initialTime, openUrl() {},

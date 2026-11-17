@@ -75,6 +75,7 @@ function bootstrapSettings() {
 				addSettingTab(tab) { state.tab = tab; }
 			},
 			PluginSettingTab: class { constructor() { this.containerEl = document.body.createDiv(); } },
+			requireApiVersion: () => false,
 			Setting,
 			MarkdownView: class {},
 			Notice: class { constructor(message) { state.notices.push(message); } },

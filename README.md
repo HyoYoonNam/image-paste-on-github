@@ -94,7 +94,7 @@ Pending uploads stay tied to the original note when you switch tabs or rename it
 <details>
 <summary>Development and license</summary>
 
-Plugin development requires Node.js 20 or later. Relay development and the full test suite require Node.js 22.12 or later for the Cloudflare tooling.
+Plugin development requires Node.js 20.19+, 22.13+, or 24+. Use Node.js 22.13+ or 24+ for relay development and the full test suite.
 
 The relay uses Cloudflare Workers and D1 in production and local development. Atomic SQL batches share pending logins and prevent repeated code exchange; tests run in the actual local workerd runtime with a D1 database. Keep its account on Free: requests fail at its limits instead of switching to paid usage. See [Cloudflare setup](relay/cloudflare/README.md) and the [authentication design](docs/auth-design.md). The App client secret stays on the Worker, and images upload directly to GitHub.
 
@@ -104,7 +104,8 @@ For a self-hosted build, set `IMAGE_PASTE_AUTH_RELAY_URL` before building. An ex
 npm ci
 npm ci --prefix relay/cloudflare # Cloudflare development and testing tools
 npm run dev           # watch build
-npm run build         # type-check and production bundle
+npm run lint          # API compatibility and source checks used in plugin review
+npm run build         # lint, type-check, and production bundle
 npm test              # mocked plugin and API regression tests
 npm run test:cloudflare # Workers API, D1, plugin-client integration, and configuration tests
 npm run test:relay      # alias for test:cloudflare

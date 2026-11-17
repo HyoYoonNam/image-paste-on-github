@@ -5,7 +5,7 @@ const { webcrypto } = require("node:crypto");
 const { test } = require("node:test");
 const { buildSync } = require("esbuild");
 const source = buildSync({ entryPoints: [path.join(__dirname, "../src/auth-storage.ts")], bundle: true, write: false, format: "cjs" }).outputFiles[0].text;
-const context = { module: { exports: {} }, crypto: webcrypto };
+const context = { module: { exports: {} }, window: { crypto: webcrypto } };
 vm.runInNewContext(source, context);
 const { OAuthStorage } = context.module.exports;
 const session = { relayUrl: "https://auth.example.com", accessToken: "access", refreshToken: "refresh", expiresAt: 1000, refreshExpiresAt: 2000 };

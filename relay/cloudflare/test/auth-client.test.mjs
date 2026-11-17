@@ -12,8 +12,8 @@ const compiled = transformSync(readFileSync(new URL("../../../src/auth.ts", impo
   loader: "ts", format: "cjs", target: "es2018",
 }).code;
 const sandbox = {
-  module: { exports: {} }, URL, TextEncoder, Date, setTimeout, clearTimeout,
-  crypto: webcrypto,
+  module: { exports: {} }, URL, TextEncoder, Date,
+  window: { crypto: webcrypto, setTimeout, clearTimeout },
   btoa: value => Buffer.from(value, "binary").toString("base64"),
 };
 vm.runInNewContext(compiled, sandbox, { filename: "auth-relay-client.cjs" });

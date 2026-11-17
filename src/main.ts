@@ -11,6 +11,7 @@ import {
 	arrayBufferToBase64,
 	normalizePath,
 	requestUrl,
+	requireApiVersion,
 } from "obsidian";
 import { convertHeicToJpeg } from "./heic";
 import { AuthError, GitHubAuth, normalizeRelayUrl } from "./auth";
@@ -78,7 +79,7 @@ const HEIC_EXTENSIONS = new Map<string, string>([
 	["image/heic", "heic"],
 	["image/heif", "heif"],
 ]);
-const UPLOAD_CANCELLED = Symbol("upload-cancelled");
+const UPLOAD_CANCELLED = new Error("Image upload cancelled.");
 
 function heicExtension(image: File): string | undefined {
 	const namedExtension = /\.(heic|heif)$/i.exec(image.name)?.[1].toLowerCase();
@@ -114,7 +115,7 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 		this.active = true;
 		await this.loadSettings();
 		if (!this.active) return;
-		this.oauthStorage = new OAuthStorage(this.app.secretStorage,
+		this.oauthStorage = new OAuthStorage(requireApiVersion("1.11.4") ? this.app.secretStorage : undefined,
 			() => this.settings.oauthSecretId,
 			async (id) => { this.settings.oauthSecretId = id; await this.saveSettings(); });
 		this.auth = new GitHubAuth({
@@ -402,8 +403,8 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 	}
 
 	private async replaceToken(target: UploadTarget, from: string, to: string | (() => string)): Promise<boolean> {
-		const editorOpened = Symbol("editor-opened");
-		const cancelled = Symbol("cancelled");
+		const editorOpened = new Error("The source note was opened in an editor.");
+		const cancelled = new Error("The source note or upload placeholder no longer exists.");
 		while (this.targetExists(target)) {
 			const editor = this.sourceEditor(target);
 			if (editor) return this.replaceEditorToken(editor, from, to);
@@ -538,7 +539,7 @@ export default class ImagePasteOnGithubPlugin extends Plugin {
 				Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
 			}, throw: false });
 			if (response.status !== 200) throw new Error("Could not list GitHub repositories. Check the App installation and reconnect if access was revoked.");
-			return response.json;
+			return response.json as unknown;
 		});
 		if (!this.active || this.settings.authMode !== "github" || !this.auth.connected || this.auth.revision !== revision) return;
 		this.repositories = repositories;
@@ -587,7 +588,7 @@ class ImagePasteSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const warning = containerEl.createEl("div", {
+		const warning = containerEl.createDiv({
 			cls: "image-paste-github-warning",
 		});
 		warning.createEl("strong", { text: "Heads up: " });
